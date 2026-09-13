@@ -6,13 +6,12 @@ const {
   MAX_WORKERS_PER_PARENT,
   POLL_INTERVAL_MS,
   TERMINAL_STATUSES,
-  WAIT_TIMEOUT_MS,
   assertOrchestratorSession,
   desktop,
   desktopOperations,
   getSession,
   getWorkerStore,
-  normalizeWorkerIds,
+  sessionIdsFromArgs,
   nextSupervisionRound,
   now,
   parentIdFromContext,
@@ -34,7 +33,8 @@ const {
   text,
   optionalText,
   withWorkerLock,
-  workerId,
+  targetSessionId,
+  waitTimeout,
 } = require("./runtime.js");
 
 const MAX_TASK_CHARS = 65_536;
@@ -50,6 +50,7 @@ function workerPrompt(task) {
     "You are a PI-Desktop worker session managed by a parent Agent.",
     "Complete the task below using this session only.",
     "Do not create or control other sessions, and do not invoke SessionTask.",
+    "If a later follow-up needs more research, continue from this session's existing context; do not create a replacement session.",
     "Return a concise final report with findings, changed files, and verification when relevant.",
     "",
     "Task:",
@@ -87,7 +88,7 @@ async function spawnWorker(args, ctx) {
     );
     record = {
       parentSessionId,
-      workerSessionId: created.id,
+      sessionId: created.id,
       task,
       title,
       status: "created",
@@ -97,14 +98,14 @@ async function spawnWorker(args, ctx) {
     await getWorkerStore().upsert(record);
 
     try {
-      const result = await withWorkerLock(record.workerSessionId, async () => {
-        const latest = getWorkerStore().get(record.workerSessionId) ?? record;
+      const result = await withWorkerLock(record.sessionId, async () => {
+        const latest = getWorkerStore().get(record.sessionId) ?? record;
         if (TERMINAL_STATUSES.has(latest.status)) {
           throw taskError("ABORTED", "worker was stopped before its first prompt");
         }
         const inheritanceError = permissionInheritanceError(parentSession, created);
         if (inheritanceError) {
-          await getWorkerStore().update(record.workerSessionId, {
+          await getWorkerStore().update(record.sessionId, {
             status: "failed",
             error: errorMessage(inheritanceError),
           });
@@ -118,14 +119,13 @@ async function spawnWorker(args, ctx) {
       });
       return {
         action: "spawn",
-        workerId: created.id,
-        workerSessionId: created.id,
+        sessionId: created.id,
         title,
         status: "running",
         ...result,
       };
     } catch (error) {
-      await getWorkerStore().update(record.workerSessionId, {
+      await getWorkerStore().update(record.sessionId, {
         status: "failed",
         error: errorMessage(error),
       });
@@ -136,15 +136,16 @@ async function spawnWorker(args, ctx) {
   }
 }
 
-async function sendWorker(args, ctx) {
+async function sendWorker(args, ctx, { preflight = true } = {}) {
   const parentSessionId = parentIdFromContext(ctx);
   assertOrchestratorSession(parentSessionId);
-  const id = workerId(args.workerId);
+  const id = targetSessionId(args);
   const message = text(args.message, "message", MAX_MESSAGE_CHARS);
 
   return withWorkerLock(id, async () => {
     const record = recordForParent(parentSessionId, id);
-    const current = await refreshRecord(record, true);
+    const stored = getWorkerStore().get(id) ?? record;
+    const current = preflight ? await refreshRecord(stored, false) : stored;
     if (ACTIVE_STATUSES.has(current.status)) {
       throw taskError("AGENT_BUSY", "worker is still active");
     }
@@ -165,7 +166,7 @@ async function sendWorker(args, ctx) {
 async function superviseWorkers(args, ctx) {
   const parentSessionId = parentIdFromContext(ctx);
   assertOrchestratorSession(parentSessionId);
-  const ids = normalizeWorkerIds(args.workerIds, true);
+  const ids = sessionIdsFromArgs(args, true);
   if (ids.length > MAX_WORKERS_PER_PARENT) {
     throw taskError(
       "LIMIT_EXCEEDED",
@@ -174,17 +175,17 @@ async function superviseWorkers(args, ctx) {
   }
   const message = text(args.message, "message", MAX_MESSAGE_CHARS);
   const records = recordsForParent(parentSessionId, ids);
-  const refreshed = await refreshRecords(records, true);
+  const refreshed = await refreshRecords(records, false);
   const busy = refreshed.filter((record) => ACTIVE_STATUSES.has(record.status));
   if (busy.length > 0) {
     throw taskError(
       "AGENT_BUSY",
-      `workers are still active: ${busy.map((record) => record.workerSessionId).join(", ")}`,
+      `workers are still active: ${busy.map((record) => record.sessionId).join(", ")}`,
     );
   }
 
   const workers = await Promise.all(
-    ids.map((id) => sendWorker({ workerId: id, message }, ctx)),
+    ids.map((id) => sendWorker({ sessionId: id, message }, ctx, { preflight: false })),
   );
   return {
     action: "supervise",
@@ -192,18 +193,18 @@ async function superviseWorkers(args, ctx) {
   };
 }
 
-function acceptanceWorkerIds(args) {
-  if (args.workerIds !== undefined) {
-    return normalizeWorkerIds(args.workerIds, true);
+function acceptanceSessionIds(args) {
+  if (args.sessionIds !== undefined || args.workerIds !== undefined) {
+    return sessionIdsFromArgs(args, true);
   }
-  if (args.workerId !== undefined) return [workerId(args.workerId)];
-  throw taskError("INVALID_ARGUMENT", "accept requires workerId or workerIds");
+  if (args.sessionId !== undefined || args.workerId !== undefined) return [targetSessionId(args)];
+  throw taskError("INVALID_ARGUMENT", "accept requires sessionId or sessionIds");
 }
 
 async function acceptWorkers(args, ctx) {
   const parentSessionId = parentIdFromContext(ctx);
   assertOrchestratorSession(parentSessionId);
-  const ids = acceptanceWorkerIds(args);
+  const ids = acceptanceSessionIds(args);
   const note = optionalText(
     args.note,
     "note",
@@ -218,7 +219,7 @@ async function acceptWorkers(args, ctx) {
     throw taskError(
       "WORKER_NOT_READY",
       `workers must have a completed final report before acceptance: ${notReady
-        .map((record) => `${record.workerSessionId} (${record.status})`)
+        .map((record) => `${record.sessionId} (${record.status})`)
         .join(", ")}`,
     );
   }
@@ -226,7 +227,7 @@ async function acceptWorkers(args, ctx) {
   const acceptedAt = now();
   await Promise.all(
     refreshed.map((record) =>
-      getWorkerStore().update(record.workerSessionId, {
+      getWorkerStore().update(record.sessionId, {
         acceptanceStatus: "accepted",
         acceptedAt,
         acceptanceRound: record.round,
@@ -247,9 +248,9 @@ async function acceptWorkers(args, ctx) {
 async function statusWorkers(args, ctx) {
   const parentSessionId = parentIdFromContext(ctx);
   assertOrchestratorSession(parentSessionId);
-  const ids = normalizeWorkerIds(args.workerIds);
+  const ids = sessionIdsFromArgs(args);
   const records = recordsForParent(parentSessionId, ids);
-  const refreshed = await refreshRecords(records, true);
+  const refreshed = await refreshRecords(records, false);
   return {
     action: "status",
     workers: refreshed.map((record) => publicWorker(record, false)),
@@ -259,8 +260,9 @@ async function statusWorkers(args, ctx) {
 async function waitWorkers(args, ctx) {
   const parentSessionId = parentIdFromContext(ctx);
   assertOrchestratorSession(parentSessionId);
-  const ids = normalizeWorkerIds(args.workerIds, true);
-  const deadline = Date.now() + WAIT_TIMEOUT_MS;
+  const ids = sessionIdsFromArgs(args, true);
+  const timeoutMs = waitTimeout(args.timeoutMs);
+  const deadline = Date.now() + timeoutMs;
 
   while (true) {
     if (ctx?.signal?.aborted) {
@@ -268,12 +270,13 @@ async function waitWorkers(args, ctx) {
     }
 
     const records = recordsForParent(parentSessionId, ids);
-    const refreshed = await refreshRecords(records, true);
+    const refreshed = await refreshRecords(records, false);
     if (refreshed.every((record) => TERMINAL_STATUSES.has(record.status))) {
+      const withReports = await refreshRecords(refreshed, true);
       return {
         action: "wait",
         timedOut: false,
-        workers: refreshed.map((record) => publicWorker(record, true)),
+        workers: withReports.map((record) => publicWorker(record, true)),
       };
     }
 
@@ -281,7 +284,7 @@ async function waitWorkers(args, ctx) {
       return {
         action: "wait",
         timedOut: true,
-        workers: refreshed.map((record) => publicWorker(record, true)),
+        workers: refreshed.map((record) => publicWorker(record, false)),
       };
     }
 
@@ -295,7 +298,7 @@ async function waitWorkers(args, ctx) {
 async function resultWorker(args, ctx) {
   const parentSessionId = parentIdFromContext(ctx);
   assertOrchestratorSession(parentSessionId);
-  const id = workerId(args.workerId);
+  const id = targetSessionId(args);
 
   return withWorkerLock(id, async () => {
     const record = recordForParent(parentSessionId, id);
@@ -311,11 +314,11 @@ async function resultWorker(args, ctx) {
 async function cancelWorker(args, ctx) {
   const parentSessionId = parentIdFromContext(ctx);
   assertOrchestratorSession(parentSessionId);
-  const id = workerId(args.workerId);
+  const id = targetSessionId(args);
 
   return withWorkerLock(id, async () => {
     const record = recordForParent(parentSessionId, id);
-    const current = await refreshRecord(record, true);
+    const current = await refreshRecord(record, false);
     if (TERMINAL_STATUSES.has(current.status)) {
       return {
         action: "cancel",
@@ -325,7 +328,7 @@ async function cancelWorker(args, ctx) {
     }
 
     if (ACTIVE_STATUSES.has(current.status)) {
-      await desktop("agent/abort", [{ sessionId: current.workerSessionId }]);
+      await desktop("agent/abort", [{ sessionId: current.sessionId }]);
     }
 
     const cancelled = {
@@ -346,7 +349,7 @@ async function listWorkers(args, ctx) {
   const parentSessionId = parentIdFromContext(ctx);
   assertOrchestratorSession(parentSessionId);
   const records = recordsForParent(parentSessionId);
-  const refreshed = await refreshRecords(records, true);
+  const refreshed = await refreshRecords(records, false);
   return {
     action: "list",
     workers: refreshed.map((record) => publicWorker(record, false)),
@@ -383,13 +386,13 @@ async function executeSessionTask(args, ctx) {
 }
 
 function panelRecord(id) {
-  const record = getWorkerStore().get(workerId(id));
+  const record = getWorkerStore().get(targetSessionId(id));
   if (!record) throw taskError("NOT_FOUND", "worker not found");
   return record;
 }
 
 async function panelList() {
-  const records = await refreshRecords(getWorkerStore().all(), true);
+  const records = await refreshRecords(getWorkerStore().all(), false);
   return {
     workers: records
       .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
@@ -398,10 +401,10 @@ async function panelList() {
 }
 
 async function panelCancel(payload) {
-  const id = workerId(payload?.workerId);
+  const id = targetSessionId(payload);
   return withWorkerLock(id, async () => {
     const record = panelRecord(id);
-    const current = await refreshRecord(record, true);
+    const current = await refreshRecord(record, false);
     if (TERMINAL_STATUSES.has(current.status)) {
       return {
         ok: true,
@@ -410,7 +413,7 @@ async function panelCancel(payload) {
       };
     }
     if (ACTIVE_STATUSES.has(current.status)) {
-      await desktop("agent/abort", [{ sessionId: current.workerSessionId }]);
+      await desktop("agent/abort", [{ sessionId: current.sessionId }]);
     }
     const cancelled = {
       ...current,
@@ -427,7 +430,7 @@ async function panelCancel(payload) {
 }
 
 async function panelOpen(payload) {
-  const record = panelRecord(payload?.workerId);
+  const record = panelRecord(payload);
   const operations = await desktopOperations();
   if (!operations.some((operation) => operation.id === "session/open")) {
     throw taskError(
@@ -435,8 +438,8 @@ async function panelOpen(payload) {
       "this PI-Desktop host cannot open a session from a plugin panel; update the host or use the session list",
     );
   }
-  await desktop("session/open", [record.workerSessionId]);
-  return { ok: true, workerId: record.workerSessionId };
+  await desktop("session/open", [record.sessionId]);
+  return { ok: true, sessionId: record.sessionId };
 }
 
 module.exports = {

@@ -19,7 +19,7 @@ const runtimeSource = readFileSync(join(pluginRoot, "runtime.js"), "utf8");
 test("manifest declares the durable worker tool, panel and bounded permissions", () => {
   assert.equal(manifest.schemaVersion, 1);
   assert.equal(manifest.id, "pi.session-orchestrator");
-  assert.equal(manifest.version, "0.2.0");
+  assert.equal(manifest.version, "0.3.0");
   assert.equal(manifest.main, "main.js");
   assert.deepEqual(manifest.permissions, [
     "ui.panel",
@@ -54,6 +54,9 @@ test("manifest declares the durable worker tool, panel and bounded permissions",
   assert.match(manifest.engines.piDesktop, /^>=0\.14\.7/);
   assert.match(manifest.safetyNotes, /desktop\.control/);
   assert.equal(manifest.contributes.agentTools[0].schema.properties.note.maxLength, 4096);
+  assert.equal(manifest.contributes.agentTools[0].schema.properties.timeoutMs.maximum, 45000);
+  assert.equal(manifest.contributes.agentTools[0].schema.properties.sessionId.type, "string");
+  assert.equal(manifest.contributes.agentTools[0].schema.properties.sessionIds.type, "array");
 });
 
 test("panel uses the host-owned v3 chrome and only the plugin bridge", () => {
@@ -67,6 +70,8 @@ test("panel uses the host-owned v3 chrome and only the plugin bridge", () => {
   assert.match(panelSource, /pluginBridge/);
   assert.match(panelSource, /acceptanceStatus/);
   assert.match(panelSource, /roundLabel/);
+  assert.match(panelSource, /data-open=.*worker\.sessionId/);
+  assert.doesNotMatch(panelSource, /worker\.workerId/);
   assert.doesNotMatch(panel, /https?:\/\//i);
 });
 
@@ -84,6 +89,9 @@ test("source stays on the reviewed desktop gateway and never creates a second se
   assert.match(source, /inheritPermissionFromSessionId/);
   assert.match(source, /MAX_WORKERS_PER_PARENT/);
   assert.match(source, /WAIT_TIMEOUT_MS/);
+  assert.match(source, /sessionId/);
+  assert.match(source, /existing context/);
+  assert.match(source, /DESKTOP_READ_TIMEOUT_MS/);
   assert.match(source, /Worker sessions cannot create or control other workers/);
 });
 
@@ -126,8 +134,8 @@ function clearPluginCache() {
   }
 }
 
-function makeHarness({ inheritPermission = true } = {}) {
-  const settings = { workers: [] };
+function makeHarness({ inheritPermission = true, initialSettings } = {}) {
+  const settings = clone(initialSettings ?? { workers: [] });
   const calls = [];
   const sessions = new Map([
     [
@@ -278,11 +286,11 @@ function makeHarness({ inheritPermission = true } = {}) {
     calls,
     sessions,
     registered,
-    complete(workerId, report) {
-      const state = running.get(workerId);
+    complete(sessionId, report) {
+      const state = running.get(sessionId);
       assert.ok(state, "worker must exist before completion");
       state.isRunning = false;
-      sessions.get(workerId).messages.push({
+      sessions.get(sessionId).messages.push({
         role: "assistant",
         content: report,
         createdAt: new Date().toISOString(),
@@ -318,8 +326,10 @@ test("spawns real workers in parallel, persists relationships, polls reports and
     harness.registered.tool.execute({ action: "spawn", task: "Review Electron", title: "Electron Review" }, ctx),
     harness.registered.tool.execute({ action: "spawn", task: "Review Rust", title: "Rust Review" }, ctx),
   ]);
-  const workerIds = spawned.map((entry) => entry.workerId);
-  assert.equal(new Set(workerIds).size, 3);
+  const sessionIds = spawned.map((entry) => entry.sessionId);
+  assert.equal(new Set(sessionIds).size, 3);
+  assert.ok(sessionIds.every((id) => id.startsWith("worker-")));
+  assert.ok(spawned.every((entry) => !("workerId" in entry)));
   assert.ok(harness.maxPromptInFlight >= 2, "spawned prompts must overlap");
 
   const creates = harness.calls.filter((call) => call.operation === "session/create");
@@ -334,25 +344,55 @@ test("spawns real workers in parallel, persists relationships, polls reports and
     assert.equal(input.inheritPermissionFromSessionId, "parent");
     assert.equal("messages" in input, false, "parent transcript must not be copied");
   }
+  const initialPromptIds = new Set(
+    harness.calls
+      .filter((call) => call.operation === "agent/prompt")
+      .map((call) => call.args[0].sessionId),
+  );
+  assert.deepEqual(initialPromptIds, new Set(sessionIds));
+  assert.ok(
+    harness.calls
+      .filter((call) => call.operation === "agent/prompt")
+      .every((call) => call.args[0].viewingSessionId === "parent"),
+  );
 
-  for (const [index, workerId] of workerIds.entries()) {
-    harness.complete(workerId, "Final report " + (index + 1));
+  const sessionGetCountBeforeStatus = harness.calls.filter(
+    (call) => call.operation === "session/get",
+  ).length;
+  const activeStatus = await harness.registered.tool.execute(
+    { action: "status", sessionIds: [sessionIds[0]] },
+    ctx,
+  );
+  assert.equal(activeStatus.workers[0].sessionId, sessionIds[0]);
+  assert.equal(
+    harness.calls.filter((call) => call.operation === "session/get").length,
+    sessionGetCountBeforeStatus,
+    "status must not read a transcript while a worker is running",
+  );
+
+  for (const [index, sessionId] of sessionIds.entries()) {
+    harness.complete(sessionId, "Final report " + (index + 1));
   }
-  const waited = await harness.registered.tool.execute({ action: "wait", workerIds }, ctx);
+  const waited = await harness.registered.tool.execute({ action: "wait", sessionIds }, ctx);
   assert.equal(waited.timedOut, false);
   assert.deepEqual(
     waited.workers.map((worker) => worker.report),
     ["Final report 1", "Final report 2", "Final report 3"],
   );
   assert.equal("messages" in waited.workers[0], false, "wait returns reports, not transcripts");
+  const legacyStatus = await harness.registered.tool.execute(
+    { action: "status", workerIds: [sessionIds[0]] },
+    ctx,
+  );
+  assert.equal(legacyStatus.workers[0].sessionId, sessionIds[0]);
 
-  const result = await harness.registered.tool.execute({ action: "result", workerId: workerIds[0] }, ctx);
+  const result = await harness.registered.tool.execute({ action: "result", sessionId: sessionIds[0] }, ctx);
   assert.equal(result.ready, true);
   assert.equal(result.worker.report, "Final report 1");
   assert.equal("messages" in result.worker, false);
 
   await harness.registered.tool.execute(
-    { action: "send", workerId: workerIds[0], message: "Add one verification detail." },
+    { action: "send", sessionId: sessionIds[0], message: "Search for one more verification detail using your existing context." },
     ctx,
   );
   assert.equal(
@@ -360,9 +400,16 @@ test("spawns real workers in parallel, persists relationships, polls reports and
     3,
     "send must not create a new session",
   );
-  harness.complete(workerIds[0], "Follow-up report");
+  assert.equal(
+    harness.calls.filter(
+      (call) => call.operation === "agent/prompt" && call.args[0].sessionId === sessionIds[0],
+    ).length,
+    2,
+    "follow-up search must reuse the same durable child session",
+  );
+  harness.complete(sessionIds[0], "Follow-up report");
   const followUp = await harness.registered.tool.execute(
-    { action: "wait", workerIds: [workerIds[0]] },
+    { action: "wait", sessionIds: [sessionIds[0]] },
     ctx,
   );
   assert.equal(followUp.workers[0].report, "Follow-up report");
@@ -372,7 +419,7 @@ test("spawns real workers in parallel, persists relationships, polls reports and
   const supervised = await harness.registered.tool.execute(
     {
       action: "supervise",
-      workerIds,
+      sessionIds,
       message: "Address the Parent review feedback and return a revised report.",
     },
     ctx,
@@ -388,11 +435,11 @@ test("spawns real workers in parallel, persists relationships, polls reports and
     "supervision must continue existing sessions",
   );
   assert.ok(harness.maxPromptInFlight >= 2, "supervision prompts must overlap");
-  for (const [index, workerId] of workerIds.entries()) {
-    harness.complete(workerId, "Supervised report " + (index + 1));
+  for (const [index, sessionId] of sessionIds.entries()) {
+    harness.complete(sessionId, "Supervised report " + (index + 1));
   }
   const supervisedWait = await harness.registered.tool.execute(
-    { action: "wait", workerIds },
+    { action: "wait", sessionIds },
     ctx,
   );
   assert.deepEqual(
@@ -402,7 +449,7 @@ test("spawns real workers in parallel, persists relationships, polls reports and
   const accepted = await harness.registered.tool.execute(
     {
       action: "accept",
-      workerIds,
+      sessionIds,
       note: "Parent verified the final reports against the acceptance criteria.",
     },
     ctx,
@@ -415,14 +462,14 @@ test("spawns real workers in parallel, persists relationships, polls reports and
   );
 
   const reopened = await harness.registered.tool.execute(
-    { action: "send", workerId: workerIds[0], message: "One more Parent verification request." },
+    { action: "send", sessionId: sessionIds[0], message: "One more Parent verification request." },
     ctx,
   );
   assert.equal(reopened.round, 4);
-  assert.equal(harness.settings.workers.find((worker) => worker.workerSessionId === workerIds[0]).acceptanceStatus, "pending");
-  harness.complete(workerIds[0], "Final verification report");
+  assert.equal(harness.settings.workers.find((worker) => worker.sessionId === sessionIds[0]).acceptanceStatus, "pending");
+  harness.complete(sessionIds[0], "Final verification report");
   await harness.registered.tool.execute(
-    { action: "wait", workerIds: [workerIds[0]] },
+    { action: "wait", sessionIds: [sessionIds[0]] },
     ctx,
   );
 
@@ -431,16 +478,16 @@ test("spawns real workers in parallel, persists relationships, polls reports and
     ctx,
   );
   const cancelled = await harness.registered.tool.execute(
-    { action: "cancel", workerId: cancelledSpawn.workerId },
+    { action: "cancel", sessionId: cancelledSpawn.sessionId },
     ctx,
   );
   assert.equal(cancelled.sessionRetained, true);
   assert.equal(cancelled.worker.status, "cancelled");
-  assert.ok(harness.sessions.has(cancelledSpawn.workerId));
+  assert.ok(harness.sessions.has(cancelledSpawn.sessionId));
   assert.equal(harness.calls.some((call) => call.operation === "session/delete"), false);
   await assert.rejects(
     harness.registered.tool.execute(
-      { action: "accept", workerId: cancelledSpawn.workerId },
+      { action: "accept", sessionId: cancelledSpawn.sessionId },
       ctx,
     ),
     (error) => error.code === "WORKER_NOT_READY",
@@ -450,7 +497,7 @@ test("spawns real workers in parallel, persists relationships, polls reports and
   assert.deepEqual(otherParent.workers, []);
   await assert.rejects(
     harness.registered.tool.execute(
-      { action: "status", workerIds: [workerIds[0]] },
+      { action: "status", sessionIds: [sessionIds[0]] },
       { sessionId: "other" },
     ),
     (error) => error.code === "NOT_FOUND",
@@ -458,12 +505,12 @@ test("spawns real workers in parallel, persists relationships, polls reports and
   await assert.rejects(
     harness.registered.tool.execute(
       { action: "list" },
-      { sessionId: workerIds[0] },
+      { sessionId: sessionIds[0] },
     ),
     (error) => error.code === "PERMISSION_DENIED",
   );
 
-  await activeMain.onPanelInvoke("workers.open", { workerId: workerIds[0] });
+  await activeMain.onPanelInvoke("workers.open", { sessionId: sessionIds[0] });
   assert.equal(harness.calls.at(-1).operation, "session/open");
 
   await activeMain.onUnload();
@@ -477,8 +524,8 @@ test("spawns real workers in parallel, persists relationships, polls reports and
     { sessionId: "parent" },
   );
   assert.equal(restored.workers.length, 4);
-  assert.equal(restored.workers.some((worker) => worker.workerId === workerIds[0]), true);
-  const restoredAccepted = restored.workers.find((worker) => worker.workerId === workerIds[1]);
+  assert.equal(restored.workers.some((worker) => worker.sessionId === sessionIds[0]), true);
+  const restoredAccepted = restored.workers.find((worker) => worker.sessionId === sessionIds[1]);
   assert.equal(restoredAccepted?.acceptanceStatus, "accepted");
   assert.equal(restoredAccepted?.round, 2);
   assert.equal(
@@ -535,9 +582,91 @@ test("wait observes AbortSignal cancellation", async (t) => {
   );
   const controller = new AbortController();
   const waiting = tool.execute(
-    { action: "wait", workerIds: [spawned.workerId] },
+    { action: "wait", sessionIds: [spawned.sessionId] },
     { sessionId: "parent", signal: controller.signal },
   );
   setTimeout(() => controller.abort(), 10);
   await assert.rejects(waiting, (error) => error.code === "ABORTED");
+});
+
+test("wait has a bounded timeout and does not repeat transcript reads", async (t) => {
+  const previousPi = globalThis.pi;
+  const harness = makeHarness();
+  globalThis.pi = harness.pi;
+  clearPluginCache();
+  let activeMain = require(join(pluginRoot, "main.js"));
+  t.after(async () => {
+    if (activeMain) await activeMain.onUnload();
+    clearPluginCache();
+    if (previousPi === undefined) delete globalThis.pi;
+    else globalThis.pi = previousPi;
+  });
+
+  await activeMain.onLoad();
+  const tool = harness.registered.tool;
+  const spawned = await tool.execute(
+    { action: "spawn", task: "keep running" },
+    { sessionId: "parent" },
+  );
+  const startedAt = Date.now();
+  const waited = await tool.execute(
+    { action: "wait", sessionIds: [spawned.sessionId], timeoutMs: 15 },
+    { sessionId: "parent" },
+  );
+  assert.equal(waited.timedOut, true);
+  assert.ok(Date.now() - startedAt < 1_000, "short wait must return promptly");
+  assert.equal(
+    harness.calls.filter((call) => call.operation === "session/get").length,
+    1,
+    "wait must not fetch a worker transcript while it is running",
+  );
+});
+
+test("migrates legacy workerSessionId settings to the real sessionId", async (t) => {
+  const previousPi = globalThis.pi;
+  const createdAt = new Date().toISOString();
+  const harness = makeHarness({
+    initialSettings: {
+      version: 1,
+      workers: [
+        {
+          parentSessionId: "parent",
+          workerSessionId: "legacy-session",
+          task: "legacy task",
+          title: "Legacy Worker",
+          status: "completed",
+          createdAt,
+          report: "legacy report",
+        },
+      ],
+    },
+  });
+  harness.sessions.set("legacy-session", {
+    id: "legacy-session",
+    projectPath: "/repo",
+    providerId: "anthropic",
+    modelId: "claude",
+    thinkingLevel: "high",
+    permissionMode: "accept-edits",
+    messages: [],
+  });
+  globalThis.pi = harness.pi;
+  clearPluginCache();
+  let activeMain = require(join(pluginRoot, "main.js"));
+  t.after(async () => {
+    if (activeMain) await activeMain.onUnload();
+    clearPluginCache();
+    if (previousPi === undefined) delete globalThis.pi;
+    else globalThis.pi = previousPi;
+  });
+
+  await activeMain.onLoad();
+  const listed = await harness.registered.tool.execute(
+    { action: "list" },
+    { sessionId: "parent" },
+  );
+  assert.equal(listed.workers[0].sessionId, "legacy-session");
+  assert.equal(harness.settings.version, 2);
+  assert.equal(harness.settings.workers[0].sessionId, "legacy-session");
+  assert.equal("workerSessionId" in harness.settings.workers[0], false);
 });

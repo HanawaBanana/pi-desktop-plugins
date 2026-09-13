@@ -5,6 +5,7 @@
   const root = document.getElementById("workers");
   const refreshButton = document.getElementById("refresh");
   const errorNode = document.getElementById("error");
+  const PANEL_REFRESH_INTERVAL_MS = 5_000;
   let timer = 0;
   let loading = false;
 
@@ -115,8 +116,8 @@
           </div>
           <div class="worker-task">${escapeHtml(worker.task)}</div>
           <div class="actions">
-            <button type="button" data-open="${escapeHtml(worker.workerId)}">${escapeHtml(t("open"))}</button>
-            <button class="secondary" type="button" data-stop="${escapeHtml(worker.workerId)}" ${terminal ? "disabled" : ""}>${escapeHtml(t("stop"))}</button>
+            <button type="button" data-open="${escapeHtml(worker.sessionId)}">${escapeHtml(t("open"))}</button>
+            <button class="secondary" type="button" data-stop="${escapeHtml(worker.sessionId)}" ${terminal ? "disabled" : ""}>${escapeHtml(t("stop"))}</button>
           </div>
         </article>`;
     }).join("");
@@ -144,7 +145,7 @@
       timer = window.setTimeout(async () => {
         await refresh();
         schedule();
-      }, 2_000);
+      }, PANEL_REFRESH_INTERVAL_MS);
     }
   }
 
@@ -167,10 +168,10 @@
     target.disabled = true;
     try {
       if (target.dataset.open) {
-        await bridge.invoke("workers.open", { workerId: target.dataset.open });
+        await bridge.invoke("workers.open", { sessionId: target.dataset.open });
       } else if (target.dataset.stop) {
         target.textContent = t("stopping");
-        await bridge.invoke("workers.cancel", { workerId: target.dataset.stop });
+        await bridge.invoke("workers.cancel", { sessionId: target.dataset.stop });
         await refresh();
       }
     } catch (error) {

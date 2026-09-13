@@ -11,8 +11,11 @@ const MAX_WORKERS_PER_PARENT = 4;
 const MAX_ACTIVE_WORKERS = 16;
 const MAX_WAIT_WORKERS = 16;
 const MAX_REPORT_CHARS = 12_000;
-const POLL_INTERVAL_MS = 750;
-const WAIT_TIMEOUT_MS = 100_000;
+const POLL_INTERVAL_MS = 1_000;
+const WAIT_TIMEOUT_MS = 25_000;
+const MAX_WAIT_TIMEOUT_MS = 45_000;
+const DESKTOP_READ_TIMEOUT_MS = 5_000;
+const STATUS_CACHE_TTL_MS = 750;
 const VALID_THINKING_LEVELS = new Set([
   "off",
   "minimal",
@@ -28,17 +31,23 @@ const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
 let workerStore;
 let spawnReservations = new Map();
 let workerLocks = new Map();
+let desktopReadInFlight = new Map();
+let statusCache = new Map();
 
 function configureWorkerRuntime(store) {
   workerStore = store;
   spawnReservations = new Map();
   workerLocks = new Map();
+  desktopReadInFlight = new Map();
+  statusCache = new Map();
 }
 
 function resetWorkerRuntime() {
   workerStore = undefined;
   spawnReservations = new Map();
   workerLocks = new Map();
+  desktopReadInFlight = new Map();
+  statusCache = new Map();
 }
 
 function getWorkerStore() {
@@ -88,7 +97,7 @@ function parentIdFromContext(ctx) {
 function assertOrchestratorSession(parentSessionId) {
   const worker = getWorkerStore()
     .all()
-    .find((record) => record.workerSessionId === parentSessionId);
+    .find((record) => record.sessionId === parentSessionId);
   if (worker) {
     throw taskError("PERMISSION_DENIED", "Worker sessions cannot create or control other workers");
   }
@@ -127,12 +136,9 @@ function sessionFromResponse(response, operation) {
 }
 
 async function getSession(sessionId, messageLimit = 1, contentLimit = 4096) {
-  const response = await desktop("session/get", [
-    {
-      id: sessionId,
-      messageLimit,
-      contentLimit,
-    },
+  const key = `session/get:${sessionId}:${messageLimit}:${contentLimit}`;
+  const response = await desktopRead(key, "session/get", [
+    { id: sessionId, messageLimit, contentLimit },
   ]);
   const session = response?.session;
   if (!session) throw taskError("NOT_FOUND", `session not found: ${sessionId}`);
@@ -140,9 +146,41 @@ async function getSession(sessionId, messageLimit = 1, contentLimit = 4096) {
 }
 
 async function getAgentStatus(sessionId) {
-  const response = await desktop("agent/getStatus", [sessionId]);
-  if (response?.status && typeof response.status === "object") return response.status;
-  return response && typeof response === "object" ? response : {};
+  const cached = statusCache.get(sessionId);
+  if (cached && Date.now() - cached.at < STATUS_CACHE_TTL_MS) return cached.value;
+
+  const response = await desktopRead(
+    `agent/getStatus:${sessionId}`,
+    "agent/getStatus",
+    [sessionId],
+  );
+  const value = response?.status && typeof response.status === "object"
+    ? response.status
+    : response && typeof response === "object"
+      ? response
+      : {};
+  statusCache.set(sessionId, { at: Date.now(), value });
+  return value;
+}
+
+function desktopRead(key, operation, args) {
+  let request = desktopReadInFlight.get(key);
+  if (!request) {
+    request = Promise.resolve()
+      .then(() => desktop(operation, args))
+      .finally(() => {
+        if (desktopReadInFlight.get(key) === request) desktopReadInFlight.delete(key);
+      });
+    desktopReadInFlight.set(key, request);
+  }
+
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(taskError("TIMEOUT", `${operation} timed out after ${DESKTOP_READ_TIMEOUT_MS}ms`));
+    }, DESKTOP_READ_TIMEOUT_MS);
+  });
+  return Promise.race([request, timeout]).finally(() => clearTimeout(timer));
 }
 
 function splitModelKey(modelKey) {
@@ -265,24 +303,69 @@ function now() {
   return new Date().toISOString();
 }
 
-function workerId(value) {
-  return text(value, "workerId", 256);
+function sessionId(value, field = "sessionId") {
+  return text(value, field, 256);
 }
 
-function normalizeWorkerIds(value, required = false) {
+function targetSessionId(args) {
+  const requested = args?.sessionId;
+  const legacy = args?.workerId;
+  if (requested !== undefined && requested !== null && requested !== "") {
+    const id = sessionId(requested);
+    if (legacy !== undefined && legacy !== null && legacy !== "") {
+      const legacyId = sessionId(legacy, "workerId");
+      if (legacyId !== id) {
+        throw taskError("INVALID_ARGUMENT", "sessionId and workerId must identify the same session");
+      }
+    }
+    return id;
+  }
+  if (legacy !== undefined && legacy !== null && legacy !== "") {
+    return sessionId(legacy, "workerId");
+  }
+  throw taskError("INVALID_ARGUMENT", "sessionId is required");
+}
+
+function sessionIdsFromArgs(args, required = false) {
+  const requested = args?.sessionIds;
+  const legacy = args?.workerIds;
+  if (requested !== undefined && legacy !== undefined) {
+    const ids = normalizeSessionIds(requested, required, "sessionIds");
+    const legacyIds = normalizeSessionIds(legacy, required, "workerIds");
+    if (JSON.stringify(ids) !== JSON.stringify(legacyIds)) {
+      throw taskError("INVALID_ARGUMENT", "sessionIds and workerIds must identify the same sessions");
+    }
+    return ids;
+  }
+  if (requested !== undefined) return normalizeSessionIds(requested, required, "sessionIds");
+  return normalizeSessionIds(legacy, required, "workerIds");
+}
+
+function normalizeSessionIds(value, required = false, field = "sessionIds") {
   if (value === undefined || value === null) {
-    if (required) throw taskError("INVALID_ARGUMENT", "workerIds is required");
+    if (required) throw taskError("INVALID_ARGUMENT", `${field} is required`);
     return undefined;
   }
-  if (!Array.isArray(value)) throw taskError("INVALID_ARGUMENT", "workerIds must be an array");
-  const ids = [...new Set(value.map((item) => workerId(item)))];
+  if (!Array.isArray(value)) throw taskError("INVALID_ARGUMENT", `${field} must be an array`);
+  const ids = [...new Set(value.map((item) => sessionId(item, field.replace(/s$/, ""))))];
   if (required && ids.length === 0) {
-    throw taskError("INVALID_ARGUMENT", "workerIds must not be empty");
+    throw taskError("INVALID_ARGUMENT", `${field} must not be empty`);
   }
   if (ids.length > MAX_WAIT_WORKERS) {
     throw taskError("LIMIT_EXCEEDED", `at most ${MAX_WAIT_WORKERS} workers may be selected`);
   }
   return ids;
+}
+
+function waitTimeout(value) {
+  if (value === undefined || value === null) return WAIT_TIMEOUT_MS;
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw taskError("INVALID_ARGUMENT", "timeoutMs must be a positive integer");
+  }
+  if (value > MAX_WAIT_TIMEOUT_MS) {
+    throw taskError("LIMIT_EXCEEDED", `timeoutMs must not exceed ${MAX_WAIT_TIMEOUT_MS}`);
+  }
+  return value;
 }
 
 function recordForParent(parentSessionId, id) {
@@ -309,8 +392,7 @@ function shorten(value, limit) {
 
 function publicWorker(record, includeReport = false) {
   return {
-    workerId: record.workerSessionId,
-    workerSessionId: record.workerSessionId,
+    sessionId: record.sessionId,
     parentSessionId: record.parentSessionId,
     title: record.title,
     task: shorten(record.task, 240),
@@ -372,12 +454,13 @@ function assistantReport(session, after) {
 }
 
 async function refreshRecord(record, includeReport = true) {
-  const currentRecord = getWorkerStore().get(record.workerSessionId) ?? record;
-  if (TERMINAL_STATUSES.has(currentRecord.status)) return currentRecord;
+  const currentRecord = getWorkerStore().get(record.sessionId) ?? record;
+  const needsReport = includeReport && currentRecord.status === "completed" && !currentRecord.report;
+  if (TERMINAL_STATUSES.has(currentRecord.status) && !needsReport) return currentRecord;
 
   let status;
   try {
-    status = await getAgentStatus(currentRecord.workerSessionId);
+    status = await getAgentStatus(currentRecord.sessionId);
   } catch (error) {
     if (isNotFound(error)) {
       const failed = {
@@ -385,10 +468,10 @@ async function refreshRecord(record, includeReport = true) {
         status: "failed",
         error: "Worker session no longer exists",
       };
-      const latest = getWorkerStore().get(currentRecord.workerSessionId);
+      const latest = getWorkerStore().get(currentRecord.sessionId);
       if (latest && TERMINAL_STATUSES.has(latest.status)) return latest;
       await getWorkerStore().upsert(failed);
-      return getWorkerStore().get(currentRecord.workerSessionId) ?? failed;
+      return getWorkerStore().get(currentRecord.sessionId) ?? failed;
     }
     throw error;
   }
@@ -402,22 +485,33 @@ async function refreshRecord(record, includeReport = true) {
 
   if (running) {
     const nextStatus = pendingToolConfirmations > 0 ? "waiting_permission" : "running";
-    const latest = getWorkerStore().get(currentRecord.workerSessionId);
+    const latest = getWorkerStore().get(currentRecord.sessionId);
     if (latest && TERMINAL_STATUSES.has(latest.status)) return latest;
     if (nextStatus !== currentRecord.status) {
-      await getWorkerStore().update(currentRecord.workerSessionId, { status: nextStatus });
+      await getWorkerStore().update(currentRecord.sessionId, { status: nextStatus });
     }
-    return getWorkerStore().get(currentRecord.workerSessionId) ?? {
+    return getWorkerStore().get(currentRecord.sessionId) ?? {
       ...currentRecord,
       status: nextStatus,
     };
   }
 
-  if (!includeReport) return currentRecord;
+  if (!includeReport) {
+    const latest = getWorkerStore().get(currentRecord.sessionId);
+    if (!latest || TERMINAL_STATUSES.has(latest.status)) return latest ?? currentRecord;
+    await getWorkerStore().update(currentRecord.sessionId, {
+      status: "completed",
+      error: undefined,
+    });
+    return getWorkerStore().get(currentRecord.sessionId) ?? {
+      ...latest,
+      status: "completed",
+    };
+  }
 
   let session;
   try {
-    session = await getSession(currentRecord.workerSessionId, 32, 64_000);
+    session = await getSession(currentRecord.sessionId, 8, MAX_REPORT_CHARS);
   } catch (error) {
     if (isNotFound(error)) {
       const failed = {
@@ -425,24 +519,24 @@ async function refreshRecord(record, includeReport = true) {
         status: "failed",
         error: "Worker session no longer exists",
       };
-      const latest = getWorkerStore().get(currentRecord.workerSessionId);
+      const latest = getWorkerStore().get(currentRecord.sessionId);
       if (latest && TERMINAL_STATUSES.has(latest.status)) return latest;
       await getWorkerStore().upsert(failed);
-      return getWorkerStore().get(currentRecord.workerSessionId) ?? failed;
+      return getWorkerStore().get(currentRecord.sessionId) ?? failed;
     }
     throw error;
   }
 
-  const latest = getWorkerStore().get(currentRecord.workerSessionId);
-  if (latest && TERMINAL_STATUSES.has(latest.status)) return latest;
+  const latest = getWorkerStore().get(currentRecord.sessionId);
+  if (latest && TERMINAL_STATUSES.has(latest.status) && latest.report) return latest;
   const report = assistantReport(session, currentRecord.promptedAt);
   if (report) {
-    await getWorkerStore().update(currentRecord.workerSessionId, {
+    await getWorkerStore().update(currentRecord.sessionId, {
       status: "completed",
       report,
       error: undefined,
     });
-    return getWorkerStore().get(currentRecord.workerSessionId) ?? {
+    return getWorkerStore().get(currentRecord.sessionId) ?? {
       ...currentRecord,
       status: "completed",
       report,
@@ -455,22 +549,25 @@ async function refreshRecord(record, includeReport = true) {
     error: "Worker ended without a final report",
   };
   await getWorkerStore().upsert(failed);
-  return getWorkerStore().get(currentRecord.workerSessionId) ?? failed;
+  return getWorkerStore().get(currentRecord.sessionId) ?? failed;
 }
 
 async function refreshRecords(records, includeReport = true) {
   return Promise.all(
-    records.map((record) =>
-      withWorkerLock(record.workerSessionId, () => refreshRecord(record, includeReport)),
-    ),
+    records.map((record) => {
+      const needsReport = includeReport && record.status === "completed" && !record.report;
+      if (TERMINAL_STATUSES.has(record.status) && !needsReport) return record;
+      return withWorkerLock(record.sessionId, () => refreshRecord(record, includeReport));
+    }),
   );
 }
 
 async function sendToWorker(record, message, parentSessionId, round = record.round ?? 1) {
   const promptedAt = now();
+  statusCache.delete(record.sessionId);
   const response = await desktop("agent/prompt", [
     {
-      sessionId: record.workerSessionId,
+      sessionId: record.sessionId,
       content: message,
       viewingSessionId: parentSessionId,
     },
@@ -479,7 +576,7 @@ async function sendToWorker(record, message, parentSessionId, round = record.rou
     throw taskError("AGENT_BUSY", "worker Agent did not accept the prompt");
   }
   const turnId = typeof response?.turnId === "string" ? response.turnId : undefined;
-  await getWorkerStore().update(record.workerSessionId, {
+  await getWorkerStore().update(record.sessionId, {
     status: "running",
     round,
     acceptanceStatus: "pending",
@@ -489,16 +586,15 @@ async function sendToWorker(record, message, parentSessionId, round = record.rou
     error: undefined,
   });
   return {
-    workerId: record.workerSessionId,
-    workerSessionId: record.workerSessionId,
+    sessionId: record.sessionId,
     accepted: response?.accepted === true,
     round,
     ...(turnId ? { turnId } : {}),
   };
 }
 
-function withWorkerLock(workerSessionId, callback) {
-  const id = String(workerSessionId);
+function withWorkerLock(sessionIdValue, callback) {
+  const id = String(sessionIdValue);
   const previous = workerLocks.get(id) || Promise.resolve();
   const run = previous.catch(() => undefined).then(callback);
   workerLocks.set(id, run);
@@ -536,6 +632,7 @@ function sleepWithSignal(ms, signal) {
 module.exports = {
   ACTIVE_STATUSES,
   MAX_ACTIVE_WORKERS,
+  MAX_WAIT_TIMEOUT_MS,
   MAX_WAIT_WORKERS,
   MAX_WORKERS_PER_PARENT,
   POLL_INTERVAL_MS,
@@ -551,7 +648,8 @@ module.exports = {
   getWorkerStore,
   MAX_ACCEPTANCE_NOTE_CHARS,
   nextSupervisionRound,
-  normalizeWorkerIds,
+  normalizeSessionIds,
+  sessionIdsFromArgs,
   now,
   parentIdFromContext,
   permissionInheritanceError,
@@ -573,5 +671,7 @@ module.exports = {
   text,
   optionalText,
   withWorkerLock,
-  workerId,
+  sessionId,
+  targetSessionId,
+  waitTimeout,
 };

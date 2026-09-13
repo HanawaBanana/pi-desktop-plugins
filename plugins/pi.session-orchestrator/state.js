@@ -25,11 +25,18 @@ function validTimestamp(value) {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
+function normalizedSessionId(value) {
+  const sessionId = boundedText(value.sessionId, 256);
+  const legacySessionId = boundedText(value.workerSessionId, 256);
+  if (sessionId && legacySessionId && sessionId !== legacySessionId) return "";
+  return sessionId || legacySessionId;
+}
+
 function normalizeRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
 
   const parentSessionId = boundedText(value.parentSessionId, 256);
-  const workerSessionId = boundedText(value.workerSessionId, 256);
+  const sessionId = normalizedSessionId(value);
   const task = boundedText(value.task);
   const title = boundedText(value.title, MAX_TITLE_CHARS);
   const createdAt = validTimestamp(value.createdAt) ? value.createdAt : "";
@@ -41,11 +48,11 @@ function normalizeRecord(value) {
     ? value.acceptanceStatus
     : "pending";
 
-  if (!parentSessionId || !workerSessionId || !task || !title || !createdAt) return null;
+  if (!parentSessionId || !sessionId || !task || !title || !createdAt) return null;
 
   const normalized = {
     parentSessionId,
-    workerSessionId,
+    sessionId,
     task,
     title,
     status,
@@ -112,8 +119,15 @@ async function createWorkerStore() {
 
   const records = new Map();
   const loaded = Array.isArray(settings.workers) ? settings.workers : [];
-  for (const record of retainRecords(loaded.map(normalizeRecord).filter(Boolean))) {
-    records.set(record.workerSessionId, record);
+  let needsMigration = settings.version !== 2;
+  for (const raw of loaded) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const record = normalizeRecord(raw);
+    if (!record) continue;
+    if (raw.sessionId !== record.sessionId || raw.workerSessionId !== undefined) {
+      needsMigration = true;
+    }
+    records.set(record.sessionId, record);
   }
 
   let writeQueue = Promise.resolve();
@@ -124,7 +138,7 @@ async function createWorkerStore() {
 
   function persist() {
     const payload = {
-      version: 1,
+      version: 2,
       workers: snapshot(),
       workersUpdatedAt: Date.now(),
     };
@@ -140,14 +154,14 @@ async function createWorkerStore() {
         (record) => !ACTIVE_STATUSES.has(record.status),
       );
       const fallback = records.keys().next().value;
-      const workerSessionId = removable?.workerSessionId ?? fallback;
-      if (workerSessionId === undefined) break;
-      records.delete(workerSessionId);
+      const sessionId = removable?.sessionId ?? fallback;
+      if (sessionId === undefined) break;
+      records.delete(sessionId);
     }
   }
 
-  function get(workerSessionId) {
-    const record = records.get(String(workerSessionId || ""));
+  function get(sessionId) {
+    const record = records.get(String(sessionId || ""));
     return record ? cloneRecord(record) : null;
   }
 
@@ -158,22 +172,24 @@ async function createWorkerStore() {
   function upsert(next) {
     const record = normalizeRecord(next);
     if (!record) throw new Error("invalid worker relationship");
-    records.set(record.workerSessionId, record);
+    records.set(record.sessionId, record);
     prune();
     return persist();
   }
 
-  function update(workerSessionId, patch) {
-    const current = records.get(String(workerSessionId || ""));
+  function update(sessionId, patch) {
+    const current = records.get(String(sessionId || ""));
     if (!current) return Promise.resolve();
     return upsert({
       ...current,
       ...patch,
       parentSessionId: current.parentSessionId,
-      workerSessionId: current.workerSessionId,
+      sessionId: current.sessionId,
       updatedAt: new Date().toISOString(),
     });
   }
+
+  if (needsMigration) await persist();
 
   return {
     get,
