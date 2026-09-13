@@ -8,7 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -76,10 +76,21 @@ function readAskpassBroker(endpoint, token) {
   });
 }
 
+function resolveAvailableWindowsSshCommand() {
+  const command = ssh.__test.resolveSshCommand();
+  if (command !== "ssh.exe") return existsSync(command) ? command : null;
+  const pathValue = process.env.PATH || process.env.Path || "";
+  for (const directory of pathValue.split(delimiter).filter(Boolean)) {
+    const candidate = join(directory, "ssh.exe");
+    if (existsSync(candidate)) return candidate;
+  }
+  return existsSync(command) ? command : null;
+}
+
 test("manifest declares a high-risk SSH agent surface with the smallest plugin permissions", () => {
   assert.equal(manifest.schemaVersion, 1);
   assert.equal(manifest.id, "pi.ssh-manager");
-  assert.equal(manifest.version, "0.1.4");
+  assert.equal(manifest.version, "0.1.5");
   assert.equal(manifest.ui.panel, "renderer/index.html");
   assert.deepEqual(manifest.permissions, [
     "ui.panel",
@@ -692,6 +703,7 @@ test("Windows SSH environment keeps SYSTEMROOT and locates OpenSSH", () => {
     { platform: "win32", processEnv: { PATH: "C:\\Windows\\System32" } },
   );
   assert.equal(stripped.SYSTEMROOT, "C:\\Windows");
+  assert.equal(stripped.ProgramData, "C:\\ProgramData");
   assert.match(stripped.COMSPEC, /cmd\.exe$/i);
   const imported = ssh.buildSshArgs(ssh.normalizeProfile({
     name: "alias",
@@ -704,6 +716,42 @@ test("Windows SSH environment keeps SYSTEMROOT and locates OpenSSH", () => {
   assert.equal(imported.includes("IdentitiesOnly=yes"), false);
 });
 
+
+test("Windows OpenSSH gets ProgramData in the host's minimal plugin environment", () => {
+  const cases = [
+    [{ SystemRoot: "D:\\Windows" }, "D:\\ProgramData"],
+    [{ SystemRoot: "C:\\Windows", ProgramData: "E:\\SharedData" }, "E:\\SharedData"],
+    [{ SYSTEMROOT: "C:\\Windows", PROGRAMDATA: "E:\\SharedData" }, "E:\\SharedData"],
+    [{ SystemRoot: "C:\\Windows", ALLUSERSPROFILE: "F:\\SharedData" }, "F:\\SharedData"],
+    [{ SystemRoot: "C:\\Windows", allusersprofile: "G:\\SharedData" }, "G:\\SharedData"],
+  ];
+  for (const [processEnv, expected] of cases) {
+    const env = ssh.__test.buildEnvironment({}, {
+      platform: "win32",
+      processEnv: { ...processEnv, UNRELATED_SECRET: "must-not-be-inherited" },
+    });
+    assert.equal(env.ProgramData, expected);
+    assert.equal(env.UNRELATED_SECRET, undefined);
+  }
+  assert.equal(ssh.__test.buildEnvironment({}, {
+    platform: "linux", processEnv: { PATH: "/usr/bin" },
+  }).ProgramData, undefined);
+});
+
+test("real Windows OpenSSH starts with the host's minimal environment", {
+  skip: process.platform !== "win32" || !resolveAvailableWindowsSshCommand(),
+}, async () => {
+  const processEnv = {};
+  for (const key of ["PATH", "SystemRoot", "windir", "TEMP", "TMP", "TMPDIR", "LANG"]) {
+    if (process.env[key]) processEnv[key] = process.env[key];
+  }
+  const { stdout, stderr } = await execFileAsync(resolveAvailableWindowsSshCommand(), ["-V"], {
+    env: ssh.__test.buildEnvironment({}, { processEnv }),
+    windowsHide: true,
+    timeout: 5000,
+  });
+  assert.match(stdout + stderr, /OpenSSH/i);
+});
 
 test("panel connect failures return diagnostics and unload kills leftover ssh processes", async () => {
   const settings = { profiles: [] };

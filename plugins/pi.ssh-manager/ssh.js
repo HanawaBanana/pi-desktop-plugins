@@ -797,6 +797,13 @@ function mergePath(existing, options = {}) {
   return platform === "win32" ? "" : "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 }
 
+function getCaseInsensitiveEnvValue(environment, name) {
+  const expected = name.toUpperCase();
+  return Object.entries(environment).find(([key, value]) =>
+    key.toUpperCase() === expected && value,
+  )?.[1];
+}
+
 function inheritWindowsEnv(env, processEnv = process.env, platform = process.platform) {
   if (platform !== "win32") return env;
   for (const key of WINDOWS_ENV_KEEP) {
@@ -807,6 +814,16 @@ function inheritWindowsEnv(env, processEnv = process.env, platform = process.pla
   if (!env.SystemRoot) env.SystemRoot = systemRoot;
   if (!env.WINDIR) env.WINDIR = systemRoot;
   if (!env.windir) env.windir = systemRoot;
+  // PI-Desktop omits ProgramData from its plugin environment. Windows OpenSSH
+  // exits 255 before initializing stderr when this directory is unavailable.
+  if (!env.ProgramData) {
+    const inherited = getCaseInsensitiveEnvValue(processEnv, "PROGRAMDATA") ||
+      getCaseInsensitiveEnvValue(env, "PROGRAMDATA");
+    const allUsersProfile = getCaseInsensitiveEnvValue(processEnv, "ALLUSERSPROFILE") ||
+      getCaseInsensitiveEnvValue(env, "ALLUSERSPROFILE");
+    env.ProgramData = inherited || allUsersProfile ||
+      path.win32.join(path.win32.parse(systemRoot).root, "ProgramData");
+  }
   if (!env.COMSPEC && !env.ComSpec) {
     env.COMSPEC = path.join(systemRoot, "System32", "cmd.exe");
     env.ComSpec = env.COMSPEC;
