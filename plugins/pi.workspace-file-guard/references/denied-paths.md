@@ -19,13 +19,13 @@
 
 ## 不要用系统临时目录，改写到这里
 
-一次性文件用 `$PI_SCRATCH_DIR`；项目本地缓存用 `$project/.tmp` 或 `$project/.tmp/cache`：
+一次性文件用 `$PI_SCRATCH_DIR`；项目本地缓存和一次性测试用 `$project/Temp` 或 `$project/Temp/cache`：
 
 | 工具 | 环境变量 / 参数 |
 | --- | --- |
 | 通用 | `TMP`、`TEMP`、`TMPDIR` |
-| Python | `PYTHONPYCACHEPREFIX`、`PIP_CACHE_DIR`、`UV_CACHE_DIR` |
-| pytest | `--basetemp .tmp/tests/pytest` |
+| Python | `PYTHONPYCACHEPREFIX`、`PIP_CACHE_DIR`、`UV_CACHE_DIR`、`PYTHONDONTWRITEBYTECODE` |
+| pytest | `--basetemp Temp/tests/pytest` |
 | Node / npm | `npm_config_cache`、`npm_config_tmp` |
 | pnpm | 只有确实需要本地 store 时才设 `PNPM_STORE_DIR` |
 | Go | `GOCACHE`、`GOTMPDIR` |
@@ -47,3 +47,5 @@
 一次性文件始终允许：`$PI_SCRATCH_DIR`（会话草稿是 `~/.pi-desktop/scratch/` 时也算）。
 
 不能当垃圾倾倒场：`~/.codex/tmp`、sessions、visualizations、`~/.pi-desktop/logs`。
+
+不能当项目根：名为 `Temp` 的倾倒目录、桌面/下载本身、用户主目录、AppData、系统临时目录、Windows / Program Files。

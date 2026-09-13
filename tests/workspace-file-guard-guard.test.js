@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const {
+  TMP_DIRNAME,
   classify,
   defaultProjectRoot,
   defaultShell,
@@ -45,8 +46,11 @@ try {
     "relative src must not resolve into the plugin directory"
   );
 
-  const relativeTmp = classify(".tmp/out/log.txt", project, { scratch });
-  assert(relativeTmp.allowed, "relative .tmp should stay inside the project");
+  const relativeLegacyTmp = classify(".tmp/out/log.txt", project, { scratch });
+  assert(relativeLegacyTmp.allowed, "legacy .tmp path inside the project should still be allowed");
+
+  const relativeTmp = classify("Temp/out/log.txt", project, { scratch });
+  assert(relativeTmp.allowed, "relative Temp should stay inside the project");
 
   const scratchFile = classify(path.join(scratch, "dump.txt"), project, { scratch });
   assert(scratchFile.allowed, "PI scratch should be allowed");
@@ -94,9 +98,10 @@ try {
   );
   assert(pluginsExplicit.allowed, "plugin install with explicit request should be allowed");
 
+  assert(TMP_DIRNAME === "Temp", "dump directory must be Temp");
   assert(
-    isRelativeTo(path.join(project, ".tmp", "out"), project),
-    ".tmp inside project should count as relative"
+    isRelativeTo(path.join(project, "Temp", "out"), project),
+    "Temp inside project should count as relative"
   );
   assert(!isRelativeTo(systemTemp, project), "OS temp should not be relative to the project");
 
@@ -114,10 +119,29 @@ try {
   assert(withWorkspace.ok, "workspace should resolve");
   assert(withWorkspace.projectRoot.toLowerCase() === resolvePath(project).toLowerCase(), "workspace root mismatch");
 
+  const fromDump = resolveToolRoot({ workspace: path.join(project, "Temp", "out") });
+  assert(fromDump.ok, "Temp dump should climb to the owning project");
+  assert(
+    fromDump.projectRoot.toLowerCase() === resolvePath(project).toLowerCase(),
+    `Temp dump owner was ${fromDump.projectRoot}`
+  );
+
+  const reservedDump = resolveToolRoot({ workspace: path.join(project, "Temp") });
+  assert(reservedDump.ok, "a Temp dump should resolve to its parent project");
+  assert(
+    reservedDump.projectRoot.toLowerCase() === resolvePath(project).toLowerCase(),
+    "Temp dump must not remain the project root"
+  );
+
+  const reservedDesktop = resolveToolRoot({ workspace: path.join(home, "Desktop") });
+  assert(!reservedDesktop.ok, "Desktop itself must not be a project root");
+
+  const reservedOsTemp = resolveToolRoot({ workspace: systemTemp });
+  assert(!reservedOsTemp.ok, "OS temp must not be a project root");
   const env = envAssignments({ projectRoot: project, scratch });
   assert(env.TEMP === resolvePath(scratch), "TEMP should point at PI scratch");
-  assert(String(env.PIP_CACHE_DIR).includes(".tmp"), "pip cache should stay in project .tmp");
-
+  assert(env.PYTHONDONTWRITEBYTECODE === "1", "python bytecode should be disabled");
+  assert(String(env.PIP_CACHE_DIR).includes("Temp"), "pip cache should stay in project Temp");
   const spaced = envAssignments({
     projectRoot: win ? "D:\\My Project" : "/data/My Project",
     scratch: path.join(home, "scratch dir"),
