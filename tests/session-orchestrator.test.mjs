@@ -19,7 +19,7 @@ const runtimeSource = readFileSync(join(pluginRoot, "runtime.js"), "utf8");
 test("manifest declares the durable worker tool, panel and bounded permissions", () => {
   assert.equal(manifest.schemaVersion, 1);
   assert.equal(manifest.id, "pi.session-orchestrator");
-  assert.equal(manifest.version, "0.1.0");
+  assert.equal(manifest.version, "0.2.0");
   assert.equal(manifest.main, "main.js");
   assert.deepEqual(manifest.permissions, [
     "ui.panel",
@@ -32,15 +32,28 @@ test("manifest declares the durable worker tool, panel and bounded permissions",
     ["SessionTask"],
   );
   assert.equal(manifest.contributes.agentTools[0].risk, "high");
+  assert.match(manifest.contributes.agentTools[0].description, /supervise/);
+  assert.match(manifest.contributes.agentTools[0].description, /accept/);
   assert.deepEqual(
     manifest.contributes.agentTools[0].schema.properties.action.enum,
-    ["spawn", "send", "status", "wait", "result", "cancel", "list"],
+    [
+      "spawn",
+      "send",
+      "supervise",
+      "status",
+      "wait",
+      "result",
+      "accept",
+      "cancel",
+      "list",
+    ],
   );
   assert.equal(manifest.ui.panel, "renderer/index.html");
   assert.ok(manifest.i18n.en.safetyNotes);
   assert.ok(manifest.i18n["zh-CN"].safetyNotes);
   assert.match(manifest.engines.piDesktop, /^>=0\.14\.7/);
   assert.match(manifest.safetyNotes, /desktop\.control/);
+  assert.equal(manifest.contributes.agentTools[0].schema.properties.note.maxLength, 4096);
 });
 
 test("panel uses the host-owned v3 chrome and only the plugin bridge", () => {
@@ -52,6 +65,8 @@ test("panel uses the host-owned v3 chrome and only the plugin bridge", () => {
   assert.match(panel, /appearance\.js/);
   assert.match(panel, /capsule-retint\.js/);
   assert.match(panelSource, /pluginBridge/);
+  assert.match(panelSource, /acceptanceStatus/);
+  assert.match(panelSource, /roundLabel/);
   assert.doesNotMatch(panel, /https?:\/\//i);
 });
 
@@ -351,6 +366,65 @@ test("spawns real workers in parallel, persists relationships, polls reports and
     ctx,
   );
   assert.equal(followUp.workers[0].report, "Follow-up report");
+  assert.equal(followUp.workers[0].round, 2);
+  assert.equal(followUp.workers[0].acceptanceStatus, "pending");
+
+  const supervised = await harness.registered.tool.execute(
+    {
+      action: "supervise",
+      workerIds,
+      message: "Address the Parent review feedback and return a revised report.",
+    },
+    ctx,
+  );
+  assert.equal(supervised.action, "supervise");
+  assert.deepEqual(
+    supervised.workers.map((worker) => worker.round),
+    [3, 2, 2],
+  );
+  assert.equal(
+    harness.calls.filter((call) => call.operation === "session/create").length,
+    3,
+    "supervision must continue existing sessions",
+  );
+  assert.ok(harness.maxPromptInFlight >= 2, "supervision prompts must overlap");
+  for (const [index, workerId] of workerIds.entries()) {
+    harness.complete(workerId, "Supervised report " + (index + 1));
+  }
+  const supervisedWait = await harness.registered.tool.execute(
+    { action: "wait", workerIds },
+    ctx,
+  );
+  assert.deepEqual(
+    supervisedWait.workers.map((worker) => worker.report),
+    ["Supervised report 1", "Supervised report 2", "Supervised report 3"],
+  );
+  const accepted = await harness.registered.tool.execute(
+    {
+      action: "accept",
+      workerIds,
+      note: "Parent verified the final reports against the acceptance criteria.",
+    },
+    ctx,
+  );
+  assert.equal(accepted.accepted, true);
+  assert.ok(accepted.workers.every((worker) => worker.acceptanceStatus === "accepted"));
+  assert.deepEqual(
+    accepted.workers.map((worker) => worker.acceptanceRound),
+    [3, 2, 2],
+  );
+
+  const reopened = await harness.registered.tool.execute(
+    { action: "send", workerId: workerIds[0], message: "One more Parent verification request." },
+    ctx,
+  );
+  assert.equal(reopened.round, 4);
+  assert.equal(harness.settings.workers.find((worker) => worker.workerSessionId === workerIds[0]).acceptanceStatus, "pending");
+  harness.complete(workerIds[0], "Final verification report");
+  await harness.registered.tool.execute(
+    { action: "wait", workerIds: [workerIds[0]] },
+    ctx,
+  );
 
   const cancelledSpawn = await harness.registered.tool.execute(
     { action: "spawn", task: "Long review", title: "Long Review" },
@@ -364,6 +438,13 @@ test("spawns real workers in parallel, persists relationships, polls reports and
   assert.equal(cancelled.worker.status, "cancelled");
   assert.ok(harness.sessions.has(cancelledSpawn.workerId));
   assert.equal(harness.calls.some((call) => call.operation === "session/delete"), false);
+  await assert.rejects(
+    harness.registered.tool.execute(
+      { action: "accept", workerId: cancelledSpawn.workerId },
+      ctx,
+    ),
+    (error) => error.code === "WORKER_NOT_READY",
+  );
 
   const otherParent = await harness.registered.tool.execute({ action: "list" }, { sessionId: "other" });
   assert.deepEqual(otherParent.workers, []);
@@ -397,6 +478,13 @@ test("spawns real workers in parallel, persists relationships, polls reports and
   );
   assert.equal(restored.workers.length, 4);
   assert.equal(restored.workers.some((worker) => worker.workerId === workerIds[0]), true);
+  const restoredAccepted = restored.workers.find((worker) => worker.workerId === workerIds[1]);
+  assert.equal(restoredAccepted?.acceptanceStatus, "accepted");
+  assert.equal(restoredAccepted?.round, 2);
+  assert.equal(
+    restoredAccepted?.acceptanceNote,
+    "Parent verified the final reports against the acceptance criteria.",
+  );
   await restarted.onUnload();
   activeMain = null;
 });

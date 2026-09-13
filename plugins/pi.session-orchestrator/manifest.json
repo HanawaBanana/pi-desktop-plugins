@@ -2,24 +2,24 @@
   "schemaVersion": 1,
   "id": "pi.session-orchestrator",
   "name": "Session Orchestrator",
-  "version": "0.1.0",
-  "description": "Create and coordinate real PI-Desktop worker sessions from an Agent.",
+  "version": "0.2.0",
+  "description": "Coordinate real PI-Desktop worker sessions from an Agent with bounded multi-round supervision and explicit acceptance.",
   "i18n": {
     "en": {
       "name": "Session Orchestrator",
-      "description": "Create and coordinate real durable PI-Desktop worker sessions from an Agent, with bounded polling and final-report aggregation.",
+      "description": "Create real durable PI-Desktop worker sessions, supervise them across bounded feedback rounds, and record Parent acceptance from final reports.",
       "safetyNotes": "This high-risk tool can create and prompt durable PI-Desktop sessions through the reviewed desktop.control gateway. Workers inherit the parent project, model, thinking level and permission mode; the plugin refuses to prompt a worker when the host cannot prove that permission inheritance was preserved. It never calls localhost MCP, reads an MCP token, copies the parent transcript, deletes sessions, or loads remote code. Native host permission confirmations remain in force."
     },
     "zh-CN": {
       "name": "Session Orchestrator 会话编排器",
-      "description": "让 Agent 创建并协调真正持久化的 PI-Desktop Worker Session，低频轮询并只汇总最终报告。",
+      "description": "让 Agent 创建真正持久化的 PI-Desktop Worker Session，进行多轮督导，并在最终报告通过后记录 Parent 验收。",
       "safetyNotes": "这是一个高风险 Agent 工具，会通过经过审查的 desktop.control 创建并提示持久化 PI-Desktop Session。Worker 继承 Parent 的项目、模型、思考级别和权限模式；如果宿主无法证明权限继承成功，插件会拒绝提示 Worker。插件不会调用 localhost MCP、读取 MCP token、复制 Parent transcript、删除 Session 或加载远程代码；宿主原有的权限确认继续生效。"
     }
   },
   "author": "PI-Desktop",
   "categories": ["developer-tools", "official"],
-  "changelog": "Release 0.1.0: durable parent-scoped workers, bounded parallel spawn/wait/cancel flows, restart-safe relationship state, final-report-only results, and an Agents panel.",
-  "safetyNotes": "Creates and prompts durable PI-Desktop sessions through desktop.control. Parent/worker relationships are private plugin state; worker transcripts remain in the normal host session store. The plugin uses no network or MCP token and never deletes worker sessions.",
+  "changelog": "Release 0.2.0: adds bounded multi-round Parent supervision, parallel feedback rounds, persisted round metadata, and explicit final-report acceptance.",
+  "safetyNotes": "Creates and prompts durable PI-Desktop sessions through desktop.control. Parent/worker relationships, supervision rounds and explicit acceptance markers are private plugin state; worker transcripts remain in the normal host session store. The plugin uses no network or MCP token and never deletes worker sessions.",
   "main": "main.js",
   "ui": {
     "panel": "renderer/index.html",
@@ -43,7 +43,7 @@
     "agentTools": [
       {
         "name": "SessionTask",
-        "description": "Create and coordinate bounded real PI-Desktop worker sessions. Use spawn for independent tasks, then status/wait/result; use send to continue the same worker and cancel to abort it without deleting its durable session. Workers are parent-scoped, capped, one level deep, and return only final reports.",
+        "description": "Create and coordinate bounded real PI-Desktop worker sessions. Start independent work with spawn in parallel, then status/wait/result. Evaluate reports in the Parent; use supervise for one feedback round across several workers or send for one worker, repeating wait/result as needed. Call accept only after the Parent verifies the final reports against its acceptance criteria. Follow-up rounds continue the same durable sessions and never create replacements; cancel aborts without deleting. Workers are parent-scoped, capped, one level deep, and return only final reports.",
         "risk": "high",
         "schema": {
           "type": "object",
@@ -51,7 +51,7 @@
           "properties": {
             "action": {
               "type": "string",
-              "enum": ["spawn", "send", "status", "wait", "result", "cancel", "list"]
+              "enum": ["spawn", "send", "supervise", "status", "wait", "result", "accept", "cancel", "list"]
             },
             "task": { "type": "string", "maxLength": 65536, "description": "Task for spawn." },
             "title": { "type": "string", "maxLength": 80, "description": "Short worker session title for spawn." },
@@ -61,9 +61,10 @@
               "type": "array",
               "maxItems": 16,
               "items": { "type": "string", "maxLength": 256 },
-              "description": "Worker ids for status or wait."
+              "description": "Worker ids for status, wait, supervise or accept."
             },
-            "message": { "type": "string", "maxLength": 65536, "description": "Follow-up message for send." }
+            "message": { "type": "string", "maxLength": 65536, "description": "Follow-up or supervision feedback for send/supervise." },
+            "note": { "type": "string", "maxLength": 4096, "description": "Optional Parent acceptance note for accept." }
           },
           "required": ["action"]
         }

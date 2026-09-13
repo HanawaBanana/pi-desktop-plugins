@@ -19,7 +19,7 @@ const TOOL_NAME = "SessionTask";
 const TOOL_DEFINITION = {
   name: TOOL_NAME,
   description:
-    "Create and coordinate bounded real PI-Desktop worker sessions. Use spawn for independent work, then status/wait/result; use send to continue the same worker and cancel to abort it without deleting its durable session. Workers are parent-scoped, capped, one level deep, and return only final reports.",
+    "Create and coordinate bounded real PI-Desktop worker sessions. Start independent work with spawn in parallel, then status/wait/result. Evaluate reports in the Parent; use supervise for one feedback round across several workers or send for one worker, repeating wait/result as needed. Call accept only after the Parent verifies the final reports against its acceptance criteria. Follow-up rounds continue the same durable sessions and never create replacements; cancel aborts without deleting. Workers are parent-scoped, capped, one level deep, and return only final reports.",
   risk: "high",
   schema: {
     type: "object",
@@ -27,7 +27,17 @@ const TOOL_DEFINITION = {
     properties: {
       action: {
         type: "string",
-        enum: ["spawn", "send", "status", "wait", "result", "cancel", "list"],
+        enum: [
+          "spawn",
+          "send",
+          "supervise",
+          "status",
+          "wait",
+          "result",
+          "accept",
+          "cancel",
+          "list",
+        ],
       },
       task: {
         type: "string",
@@ -58,7 +68,12 @@ const TOOL_DEFINITION = {
       message: {
         type: "string",
         maxLength: 65_536,
-        description: "Follow-up message for send.",
+        description: "Follow-up or supervision feedback for send/supervise.",
+      },
+      note: {
+        type: "string",
+        maxLength: 4_096,
+        description: "Optional Parent acceptance note for accept.",
       },
     },
     required: ["action"],

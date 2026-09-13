@@ -3,6 +3,8 @@
 const MAX_PERSISTED_WORKERS = 256;
 const MAX_TEXT_CHARS = 65_536;
 const MAX_TITLE_CHARS = 160;
+const MAX_ACCEPTANCE_NOTE_CHARS = 4_096;
+const MAX_SUPERVISION_ROUNDS = 16;
 const VALID_STATUSES = new Set([
   "created",
   "running",
@@ -12,6 +14,7 @@ const VALID_STATUSES = new Set([
   "cancelled",
 ]);
 const ACTIVE_STATUSES = new Set(["created", "running", "waiting_permission"]);
+const VALID_ACCEPTANCE_STATUSES = new Set(["pending", "accepted"]);
 
 function boundedText(value, limit = MAX_TEXT_CHARS) {
   if (typeof value !== "string") return "";
@@ -31,6 +34,12 @@ function normalizeRecord(value) {
   const title = boundedText(value.title, MAX_TITLE_CHARS);
   const createdAt = validTimestamp(value.createdAt) ? value.createdAt : "";
   const status = VALID_STATUSES.has(value.status) ? value.status : "created";
+  const round = Number.isInteger(value.round) && value.round >= 1 && value.round <= MAX_SUPERVISION_ROUNDS
+    ? value.round
+    : 1;
+  const acceptanceStatus = VALID_ACCEPTANCE_STATUSES.has(value.acceptanceStatus)
+    ? value.acceptanceStatus
+    : "pending";
 
   if (!parentSessionId || !workerSessionId || !task || !title || !createdAt) return null;
 
@@ -41,6 +50,8 @@ function normalizeRecord(value) {
     title,
     status,
     createdAt,
+    round,
+    acceptanceStatus,
   };
 
   if (validTimestamp(value.updatedAt)) normalized.updatedAt = value.updatedAt;
@@ -53,6 +64,24 @@ function normalizeRecord(value) {
   }
   if (typeof value.report === "string" && value.report.trim()) {
     normalized.report = boundedText(value.report, 12_000);
+  }
+  if (validTimestamp(value.acceptedAt) && acceptanceStatus === "accepted") {
+    normalized.acceptedAt = value.acceptedAt;
+  }
+  if (
+    typeof value.acceptanceNote === "string" &&
+    value.acceptanceNote.trim() &&
+    acceptanceStatus === "accepted"
+  ) {
+    normalized.acceptanceNote = boundedText(value.acceptanceNote, MAX_ACCEPTANCE_NOTE_CHARS);
+  }
+  if (
+    Number.isInteger(value.acceptanceRound) &&
+    value.acceptanceRound >= 1 &&
+    value.acceptanceRound <= round &&
+    acceptanceStatus === "accepted"
+  ) {
+    normalized.acceptanceRound = value.acceptanceRound;
   }
   if (typeof value.error === "string" && value.error.trim()) {
     normalized.error = boundedText(value.error, 2_000);
@@ -158,8 +187,11 @@ async function createWorkerStore() {
 module.exports = {
   ACTIVE_STATUSES,
   MAX_PERSISTED_WORKERS,
+  MAX_ACCEPTANCE_NOTE_CHARS,
   MAX_TEXT_CHARS,
+  MAX_SUPERVISION_ROUNDS,
   VALID_STATUSES,
+  VALID_ACCEPTANCE_STATUSES,
   createWorkerStore,
   normalizeRecord,
 };

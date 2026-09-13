@@ -10,17 +10,33 @@ The plugin registers one high-risk tool, `SessionTask`, with these actions:
 - `spawn(task, title?, model?)` creates a new durable session and immediately
   starts its Agent.
 - `send(workerId, message)` continues the same durable worker session.
+- `supervise(workerIds, message)` sends the next Parent feedback round to
+  several existing workers in parallel without creating new sessions.
 - `status(workerIds?)` reads bounded live status.
 - `wait(workerIds)` polls at low frequency with a 100-second timeout and
   returns bounded terminal records.
 - `result(workerId)` returns only the worker's final report when available.
+- `accept(workerId|workerIds, note?)` records explicit Parent acceptance only
+  after the selected workers have completed with final reports.
 - `cancel(workerId)` aborts the active Agent and retains the session.
 - `list()` lists workers created by the current Parent Session.
 
-The intended flow is to call `spawn` several times without awaiting each
-result, then call `wait` once with all worker ids and summarize the returned
-reports in the Parent. The plugin does not copy a worker transcript into the
-Parent context.
+The intended supervised flow is:
+
+1. Call `spawn` several times without awaiting each result.
+2. Call `wait` and `result`, then review the reports in the Parent against the
+   acceptance criteria.
+3. If a report needs work, call `send` for one worker or `supervise` for a
+   shared feedback round. Both continue the same durable sessions and advance
+   their persisted round number.
+4. Repeat `wait` → `result` → Parent review for as many rounds as needed,
+   within the bounded sixteen-round limit.
+5. Call `accept` only after the Parent has verified the final reports. An
+   accepted worker becomes pending again automatically when it receives new
+   feedback.
+
+The plugin does not copy a worker transcript into the Parent context; only
+bounded final reports and acceptance metadata are returned.
 
 ## Safety and boundaries
 
@@ -36,8 +52,10 @@ Parent context.
   explicitly requested model must be present in the host's public
   `models.list` result.
 - Parent/worker relationships are stored in the plugin's private settings as
-  bounded `workers` records. They are restored after plugin or app restart;
-  the durable worker transcript remains in PI-Desktop's normal session store.
+  bounded `workers` records. They include the current supervision round and
+  explicit Parent acceptance marker. They are restored after plugin or app
+  restart; the durable worker transcript remains in PI-Desktop's normal
+  session store.
 - A Parent can control only worker ids recorded under that Parent. A worker
   cannot create or control another worker. The limits are four active workers
   per Parent, sixteen active workers across the plugin, and sixteen workers
@@ -59,8 +77,10 @@ Parent context.
 | Plugin settings | `parentSessionId`, `workerSessionId`, task, status, timestamps and bounded final report | Stored in the plugin-private settings namespace; worker transcript content is never copied into it. |
 
 The high-risk desktop surface is intentionally narrow: `spawn`, `send`,
-`status`, `wait`, `result`, `cancel` and `list` are the only operations exposed
-by `SessionTask`.
+`supervise`, `status`, `wait`, `result`, `accept`, `cancel` and `list` are the
+only operations exposed by `SessionTask`. `accept` only writes plugin-private
+metadata; it does not alter the worker session or claim that the work is
+correct without an explicit Parent decision.
 
 ## Agents panel
 
@@ -72,7 +92,7 @@ list.
 
 ## Host compatibility
 
-Version 0.1.0 targets PI-Desktop hosts that expose the reviewed
+Version 0.2.0 targets PI-Desktop hosts that expose the reviewed
 `desktop.control` catalog and the additive
 `inheritPermissionFromSessionId` / `session/open` host capabilities. The
 plugin still uses only the stable SDK gateway, so no MCP token or private

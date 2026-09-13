@@ -2,6 +2,8 @@
 
 const {
   ACTIVE_STATUSES,
+  MAX_ACCEPTANCE_NOTE_CHARS,
+  MAX_WORKERS_PER_PARENT,
   POLL_INTERVAL_MS,
   TERMINAL_STATUSES,
   WAIT_TIMEOUT_MS,
@@ -11,6 +13,7 @@ const {
   getSession,
   getWorkerStore,
   normalizeWorkerIds,
+  nextSupervisionRound,
   now,
   parentIdFromContext,
   permissionInheritanceError,
@@ -148,14 +151,97 @@ async function sendWorker(args, ctx) {
 
     reserveSpawn(parentSessionId);
     try {
+      const round = nextSupervisionRound(current);
       return {
         action: "send",
-        ...(await sendToWorker(current, message, parentSessionId)),
+        ...(await sendToWorker(current, message, parentSessionId, round)),
       };
     } finally {
       releaseSpawn(parentSessionId);
     }
   });
+}
+
+async function superviseWorkers(args, ctx) {
+  const parentSessionId = parentIdFromContext(ctx);
+  assertOrchestratorSession(parentSessionId);
+  const ids = normalizeWorkerIds(args.workerIds, true);
+  if (ids.length > MAX_WORKERS_PER_PARENT) {
+    throw taskError(
+      "LIMIT_EXCEEDED",
+      `at most ${MAX_WORKERS_PER_PARENT} workers may receive one supervision round`,
+    );
+  }
+  const message = text(args.message, "message", MAX_MESSAGE_CHARS);
+  const records = recordsForParent(parentSessionId, ids);
+  const refreshed = await refreshRecords(records, true);
+  const busy = refreshed.filter((record) => ACTIVE_STATUSES.has(record.status));
+  if (busy.length > 0) {
+    throw taskError(
+      "AGENT_BUSY",
+      `workers are still active: ${busy.map((record) => record.workerSessionId).join(", ")}`,
+    );
+  }
+
+  const workers = await Promise.all(
+    ids.map((id) => sendWorker({ workerId: id, message }, ctx)),
+  );
+  return {
+    action: "supervise",
+    workers: workers.map(({ action, ...worker }) => worker),
+  };
+}
+
+function acceptanceWorkerIds(args) {
+  if (args.workerIds !== undefined) {
+    return normalizeWorkerIds(args.workerIds, true);
+  }
+  if (args.workerId !== undefined) return [workerId(args.workerId)];
+  throw taskError("INVALID_ARGUMENT", "accept requires workerId or workerIds");
+}
+
+async function acceptWorkers(args, ctx) {
+  const parentSessionId = parentIdFromContext(ctx);
+  assertOrchestratorSession(parentSessionId);
+  const ids = acceptanceWorkerIds(args);
+  const note = optionalText(
+    args.note,
+    "note",
+    MAX_ACCEPTANCE_NOTE_CHARS,
+  );
+  const records = recordsForParent(parentSessionId, ids);
+  const refreshed = await refreshRecords(records, true);
+  const notReady = refreshed.filter(
+    (record) => record.status !== "completed" || !record.report,
+  );
+  if (notReady.length > 0) {
+    throw taskError(
+      "WORKER_NOT_READY",
+      `workers must have a completed final report before acceptance: ${notReady
+        .map((record) => `${record.workerSessionId} (${record.status})`)
+        .join(", ")}`,
+    );
+  }
+
+  const acceptedAt = now();
+  await Promise.all(
+    refreshed.map((record) =>
+      getWorkerStore().update(record.workerSessionId, {
+        acceptanceStatus: "accepted",
+        acceptedAt,
+        acceptanceRound: record.round,
+        ...(note ? { acceptanceNote: note } : {}),
+      }),
+    ),
+  );
+  const accepted = ids
+    .map((id) => getWorkerStore().get(id))
+    .filter(Boolean);
+  return {
+    action: "accept",
+    accepted: true,
+    workers: accepted.map((record) => publicWorker(record, true)),
+  };
 }
 
 async function statusWorkers(args, ctx) {
@@ -277,12 +363,16 @@ async function executeSessionTask(args, ctx) {
       return spawnWorker(args, ctx);
     case "send":
       return sendWorker(args, ctx);
+    case "supervise":
+      return superviseWorkers(args, ctx);
     case "status":
       return statusWorkers(args, ctx);
     case "wait":
       return waitWorkers(args, ctx);
     case "result":
       return resultWorker(args, ctx);
+    case "accept":
+      return acceptWorkers(args, ctx);
     case "cancel":
       return cancelWorker(args, ctx);
     case "list":

@@ -26,6 +26,9 @@
       openUnavailable: "Open Session is unavailable on this host; use the session list.",
       loadFailed: "Unable to read workers",
       actionFailed: "Worker action failed",
+      round: "Round",
+      acceptancePending: "Needs acceptance",
+      acceptanceAccepted: "Accepted",
     },
     "zh-CN": {
       eyebrow: "SESSION ORCHESTRATOR",
@@ -44,6 +47,9 @@
       openUnavailable: "当前宿主不支持直接打开 Session，请从 Session 列表进入。",
       loadFailed: "无法读取 Worker",
       actionFailed: "Worker 操作失败",
+      round: "第",
+      acceptancePending: "待验收",
+      acceptanceAccepted: "已验收",
     },
   };
   let locale = "en";
@@ -76,6 +82,17 @@
     return t(status);
   }
 
+  function acceptanceLabel(worker) {
+    return worker.acceptanceStatus === "accepted"
+      ? t("acceptanceAccepted")
+      : t("acceptancePending");
+  }
+
+  function roundLabel(round) {
+    const value = Number.isInteger(round) && round > 0 ? round : 1;
+    return locale === "zh-CN" ? `${t("round")} ${value} 轮` : `${t("round")} ${value}`;
+  }
+
   function render(workers) {
     if (!workers.length) {
       root.innerHTML = `<div class="empty">${escapeHtml(t("empty"))}</div>`;
@@ -92,6 +109,10 @@
             <span class="worker-title" title="${escapeHtml(worker.title)}">${escapeHtml(worker.title)}</span>
           </div>
           <div class="status-label">${escapeHtml(statusLabel(worker.status))}</div>
+          <div class="worker-meta">
+            <span>${escapeHtml(roundLabel(worker.round))}</span>
+            <span class="acceptance acceptance-${escapeHtml(worker.acceptanceStatus || "pending")}" aria-label="${escapeHtml(acceptanceLabel(worker))}">${escapeHtml(acceptanceLabel(worker))}</span>
+          </div>
           <div class="worker-task">${escapeHtml(worker.task)}</div>
           <div class="actions">
             <button type="button" data-open="${escapeHtml(worker.workerId)}">${escapeHtml(t("open"))}</button>

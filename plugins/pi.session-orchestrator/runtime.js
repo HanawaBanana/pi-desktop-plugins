@@ -1,6 +1,11 @@
 "use strict";
 
-const { ACTIVE_STATUSES, createWorkerStore } = require("./state.js");
+const {
+  ACTIVE_STATUSES,
+  MAX_ACCEPTANCE_NOTE_CHARS,
+  MAX_SUPERVISION_ROUNDS,
+  createWorkerStore,
+} = require("./state.js");
 
 const MAX_WORKERS_PER_PARENT = 4;
 const MAX_ACTIVE_WORKERS = 16;
@@ -311,12 +316,30 @@ function publicWorker(record, includeReport = false) {
     task: shorten(record.task, 240),
     status: record.status,
     createdAt: record.createdAt,
+    round: record.round,
+    acceptanceStatus: record.acceptanceStatus,
     ...(record.updatedAt ? { updatedAt: record.updatedAt } : {}),
     ...(record.modelKey ? { model: record.modelKey } : {}),
     ...(record.turnId ? { turnId: record.turnId } : {}),
+    ...(record.acceptedAt ? { acceptedAt: record.acceptedAt } : {}),
+    ...(record.acceptanceRound ? { acceptanceRound: record.acceptanceRound } : {}),
+    ...(record.acceptanceNote ? { acceptanceNote: record.acceptanceNote } : {}),
     ...(includeReport && record.report ? { report: record.report } : {}),
     ...(record.error ? { error: record.error } : {}),
   };
+}
+
+function nextSupervisionRound(record) {
+  const current = Number.isInteger(record?.round) && record.round >= 1
+    ? record.round
+    : 1;
+  if (current >= MAX_SUPERVISION_ROUNDS) {
+    throw taskError(
+      "LIMIT_EXCEEDED",
+      `worker reached the ${MAX_SUPERVISION_ROUNDS}-round supervision limit`,
+    );
+  }
+  return current + 1;
 }
 
 function messageText(content) {
@@ -443,7 +466,7 @@ async function refreshRecords(records, includeReport = true) {
   );
 }
 
-async function sendToWorker(record, message, parentSessionId) {
+async function sendToWorker(record, message, parentSessionId, round = record.round ?? 1) {
   const promptedAt = now();
   const response = await desktop("agent/prompt", [
     {
@@ -458,6 +481,8 @@ async function sendToWorker(record, message, parentSessionId) {
   const turnId = typeof response?.turnId === "string" ? response.turnId : undefined;
   await getWorkerStore().update(record.workerSessionId, {
     status: "running",
+    round,
+    acceptanceStatus: "pending",
     promptedAt,
     ...(turnId ? { turnId } : {}),
     report: undefined,
@@ -467,6 +492,7 @@ async function sendToWorker(record, message, parentSessionId) {
     workerId: record.workerSessionId,
     workerSessionId: record.workerSessionId,
     accepted: response?.accepted === true,
+    round,
     ...(turnId ? { turnId } : {}),
   };
 }
@@ -523,6 +549,8 @@ module.exports = {
   getAgentStatus,
   getSession,
   getWorkerStore,
+  MAX_ACCEPTANCE_NOTE_CHARS,
+  nextSupervisionRound,
   normalizeWorkerIds,
   now,
   parentIdFromContext,
