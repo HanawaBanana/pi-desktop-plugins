@@ -8,7 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -74,6 +74,17 @@ function readAskpassBroker(endpoint, token) {
     socket.on("error", () => resolve(output));
     socket.on("close", () => resolve(output));
   });
+}
+
+function resolveAvailableWindowsSshCommand() {
+  const command = ssh.__test.resolveSshCommand();
+  if (command !== "ssh.exe") return existsSync(command) ? command : null;
+  const pathValue = process.env.PATH || process.env.Path || "";
+  for (const directory of pathValue.split(delimiter).filter(Boolean)) {
+    const candidate = join(directory, "ssh.exe");
+    if (existsSync(candidate)) return candidate;
+  }
+  return existsSync(command) ? command : null;
 }
 
 test("manifest declares a high-risk SSH agent surface with the smallest plugin permissions", () => {
@@ -712,6 +723,7 @@ test("Windows OpenSSH gets ProgramData in the host's minimal plugin environment"
     [{ SystemRoot: "C:\\Windows", ProgramData: "E:\\SharedData" }, "E:\\SharedData"],
     [{ SYSTEMROOT: "C:\\Windows", PROGRAMDATA: "E:\\SharedData" }, "E:\\SharedData"],
     [{ SystemRoot: "C:\\Windows", ALLUSERSPROFILE: "F:\\SharedData" }, "F:\\SharedData"],
+    [{ SystemRoot: "C:\\Windows", allusersprofile: "G:\\SharedData" }, "G:\\SharedData"],
   ];
   for (const [processEnv, expected] of cases) {
     const env = ssh.__test.buildEnvironment({}, {
@@ -727,13 +739,13 @@ test("Windows OpenSSH gets ProgramData in the host's minimal plugin environment"
 });
 
 test("real Windows OpenSSH starts with the host's minimal environment", {
-  skip: process.platform !== "win32" || !existsSync(ssh.__test.resolveSshCommand()),
+  skip: process.platform !== "win32" || !resolveAvailableWindowsSshCommand(),
 }, async () => {
   const processEnv = {};
   for (const key of ["PATH", "SystemRoot", "windir", "TEMP", "TMP", "TMPDIR", "LANG"]) {
     if (process.env[key]) processEnv[key] = process.env[key];
   }
-  const { stdout, stderr } = await execFileAsync(ssh.__test.resolveSshCommand(), ["-V"], {
+  const { stdout, stderr } = await execFileAsync(resolveAvailableWindowsSshCommand(), ["-V"], {
     env: ssh.__test.buildEnvironment({}, { processEnv }),
     windowsHide: true,
     timeout: 5000,
