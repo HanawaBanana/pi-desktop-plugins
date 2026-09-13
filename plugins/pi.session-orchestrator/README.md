@@ -37,7 +37,7 @@ automatic completion notice.
 | `send(sessionId, message, kind?)` | Sends a task or message to an existing session, including a busy session's host queue. Does not reselect its model. |
 | `models()` | Lists ready model keys, aliases, reasoning metadata, AI-delegation eligibility, and the default. |
 | `status(sessionIds?)` | Reads host-owned live summaries; omission selects this caller's recent session references. |
-| `list()` | Compatibility alias for recent-reference status; it is not a session-authorization list. |
+| `list()` | Reads a bounded host-backed directory of communicable Agent sessions, including independent top-level sessions. The response also retains a legacy `workers` field for recent-reference callers. |
 | `result(sessionId, messageId?, turnId?)` | Returns the host delivery and exact turn outcome. Failed or interrupted work is never accepted as a successful report. |
 | `wait(sessionIds, timeoutMs?)` | Explicit polling fallback, 25 seconds by default and at most 45 seconds. The entire read budget observes the deadline and cancellation. |
 | `supervise(sessionIds, message)` | Sends up to four follow-ups in parallel; returns successful receipts and any individual failures. |
@@ -117,7 +117,7 @@ twice while pending.
 
 The manifest retains `engines.piDesktop >=0.14.7`, but version alone does not
 prove this additive capability exists. Each operation checks the host's reviewed
-catalog for `session/collaboration/{spawn,send,status,result,cancel}`. An older
+catalog for `session/collaboration/{spawn,send,list,status,result,cancel}`. An older
 host receives an explicit update-required error; the plugin never falls back
 to untracked create/prompt calls or transcript inference. `session/open` is
 checked independently.

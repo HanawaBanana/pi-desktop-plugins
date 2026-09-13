@@ -42,7 +42,7 @@ export function makeHarness({ initialSettings, models } = {}) {
       model("default/general", { isDefault: true }),
       model("allowed/claude-sonnet-4-6", { alias: "Review", availableForSubagents: true, supportsReasoning: true }),
     ],
-    operations: ["spawn", "send", "status", "result", "cancel"].map((name) => ({ id: prefix + name })).concat([{ id: "session/open" }]),
+    operations: ["spawn", "send", "list", "status", "result", "cancel"].map((name) => ({ id: prefix + name })).concat([{ id: "session/open" }]),
     modelReads: 0,
     writes: [],
     beforeInvoke: undefined,
@@ -131,6 +131,16 @@ export function makeHarness({ initialSettings, models } = {}) {
                 kind: entry.kind, status: entry.status, preview: entry.content.slice(0, 200), createdAt: entry.createdAt,
               })),
           });
+        }
+        if (operation === prefix + "list") {
+          return clone({ sessions: [...sessions.values()].map((entry) => ({
+            sessionId: entry.sessionId,
+            title: entry.title,
+            status: entry.status,
+            updatedAt: new Date().toISOString(),
+            ...(entry.modelKey ? { modelKey: entry.modelKey } : {}),
+            ...(entry.createdBySession ? { createdBySession: entry.createdBySession } : {}),
+          })) });
         }
         if (operation === prefix + "result") {
           lookup(input.sessionId);
