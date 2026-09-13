@@ -79,6 +79,20 @@ test("any existing session supports bidirectional messages without reselecting m
   assert.equal(h.calls.filter((entry) => entry.operation === prefix + "spawn").length, 0);
 });
 
+test("list discovers independent top-level sessions without turning plugin history into authority", async (t) => {
+  const h = await loadHarness(t);
+  const listed = await h.execute({ action: "list" });
+  assert.ok(listed.sessions.some((entry) => entry.sessionId === "other"));
+  assert.ok(listed.sessions.some((entry) => entry.sessionId === "peer"));
+  assert.equal(listed.sessions.find((entry) => entry.sessionId === "other").createdBySession, undefined);
+
+  const spawned = await h.execute({ action: "spawn", task: "Create a linked session", title: "Linked" });
+  const refreshed = await h.execute({ action: "list" });
+  const linked = refreshed.sessions.find((entry) => entry.sessionId === spawned.sessionId);
+  assert.deepEqual(linked.createdBySession, { sessionId: "parent", title: "parent" });
+  assert.equal(refreshed.workers[0].sessionId, spawned.sessionId);
+});
+
 test("model catalog changes are observed before each new spawn", async (t) => {
   const h = await loadHarness(t);
   const catalog = await h.execute({ action: "models" });

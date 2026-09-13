@@ -123,6 +123,28 @@ function createActions(runtime) {
     return { action, workers: workers.map((entry) => withAcceptance(entry, owner)) };
   }
 
+  async function list(args, ctx) {
+    const owner = contextSessionId(ctx);
+    await runtime.ensureOperation(PREFIX + "list", { signal: ctx.signal });
+    const value = await runtime.call("list", {}, { signal: ctx.signal });
+    if (!value || !Array.isArray(value.sessions) || value.sessions.length > 100 || value.sessions.some((entry) => (
+      !entry || typeof entry.sessionId !== "string" || !entry.sessionId ||
+      typeof entry.title !== "string" || typeof entry.status !== "string"
+    ))) {
+      throw taskError("INTERNAL", "Host returned an invalid session directory");
+    }
+    // Keep the legacy workers field for callers that used list() as a recent
+    // reference status read. The host-backed sessions field is the authority
+    // for discovering independent top-level sessions.
+    const ids = store.list(owner, MAX_SELECTED_SESSIONS).map((entry) => entry.sessionId);
+    const workers = await Promise.all(ids.map((id) => readStatus(id, { signal: ctx.signal })));
+    return {
+      action: "list",
+      sessions: value.sessions,
+      workers: workers.map((entry) => withAcceptance(entry, owner)),
+    };
+  }
+
   async function result(args, ctx) {
     const owner = contextSessionId(ctx);
     const sessionId = targetSessionId(args);
@@ -242,7 +264,7 @@ function createActions(runtime) {
       case "spawn": return spawn(args, ctx);
       case "send": return send(args, ctx);
       case "status": return status(args, ctx);
-      case "list": return status(args, ctx, "list");
+      case "list": return list(args, ctx);
       case "result": return result(args, ctx);
       case "wait": return wait(args, ctx);
       case "supervise": return supervise(args, ctx);
