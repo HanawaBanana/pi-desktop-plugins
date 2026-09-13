@@ -45,6 +45,15 @@ ssh-agent 时，优先让 PI-Desktop 继承正确的 `SSH_AUTH_SOCK`，也可以
 “连接”创建的是插件内的逻辑会话。每次命令仍启动一个有超时和输出上限、不会继承插件标准输入的本机
 `ssh` 进程，不会在插件进程里保留一个可被后台复用的远程 shell。
 
+## Windows OpenSSH startup
+
+PI-Desktop passes a minimal environment to plugins. Windows OpenSSH requires
+`ProgramData` even for `ssh -V`; without it, it can exit 255 with no output before
+connection diagnostics are initialized. The plugin preserves an inherited
+`ProgramData` (case-insensitive) or `ALLUSERSPROFILE`, and otherwise supplies
+`ProgramData` on the Windows system volume (normally `C:\ProgramData`). It does
+not copy unrelated environment variables or change host-key verification.
+
 ## AI 使用建议
 
 AI 应先调用 `ssh_list_hosts`，再使用用户确认过的 `profile_id` 连接。连接和执行

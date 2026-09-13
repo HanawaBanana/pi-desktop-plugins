@@ -807,6 +807,14 @@ function inheritWindowsEnv(env, processEnv = process.env, platform = process.pla
   if (!env.SystemRoot) env.SystemRoot = systemRoot;
   if (!env.WINDIR) env.WINDIR = systemRoot;
   if (!env.windir) env.windir = systemRoot;
+  // PI-Desktop omits ProgramData from its plugin environment. Windows OpenSSH
+  // exits 255 before initializing stderr when this directory is unavailable.
+  if (!env.ProgramData) {
+    const inherited = Object.entries(processEnv)
+      .find(([key, value]) => key.toUpperCase() === "PROGRAMDATA" && value)?.[1];
+    env.ProgramData = inherited || env.ALLUSERSPROFILE ||
+      path.win32.join(path.win32.parse(systemRoot).root, "ProgramData");
+  }
   if (!env.COMSPEC && !env.ComSpec) {
     env.COMSPEC = path.join(systemRoot, "System32", "cmd.exe");
     env.ComSpec = env.COMSPEC;
