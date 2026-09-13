@@ -142,23 +142,27 @@ button:focus-visible { outline: 2px solid var(--pi-focus); outline-offset: 2px; 
   justify-content: center;
   font-size: 13px;
 }
-.status-running, .status-waiting_permission, .status-created { color: var(--pi-warning); }
+.status-running, .status-waiting_permission, .status-queued { color: var(--pi-warning); }
 .status-completed { color: var(--pi-success); }
-.status-failed, .status-cancelled { color: var(--pi-danger); }
+.status-failed, .status-cancelled, .status-interrupted, .status-unavailable { color: var(--pi-danger); }
 .status-label {
   margin-left: 21px;
   color: var(--pi-muted);
   font-size: 10px;
 }
-.worker-meta {
-  display: flex;
-  margin: 4px 0 0 21px;
-  gap: 8px;
+.session-id, .worker-model, .worker-source {
+  margin: 5px 0 0 21px;
   color: var(--pi-muted);
-  font-size: 10px;
+  overflow-wrap: anywhere;
+  font-size: 11px;
 }
-.acceptance-accepted { color: var(--pi-success); }
-.acceptance-pending { color: var(--pi-warning); }
+.session-id { font-family: ui-monospace, SFMono-Regular, monospace; user-select: text; }
+.worker-source { line-height: 1.5; }
+.worker-error { margin: 8px 0; color: var(--pi-danger); overflow-wrap: anywhere; }
+.exchanges { margin: 10px 0; padding: 0 0 0 21px; list-style: none; }
+.exchanges li + li { margin-top: 8px; }
+.exchange-source { color: var(--pi-text); font-size: 11px; overflow-wrap: anywhere; }
+.exchange-preview { margin-top: 2px; color: var(--pi-muted); font-size: 11px; overflow-wrap: anywhere; }
 .actions {
   display: flex;
   justify-content: flex-end;
@@ -169,7 +173,8 @@ button:focus-visible { outline: 2px solid var(--pi-focus); outline-offset: 2px; 
   .toolbar { padding-right: 0; }
   .worker-task { margin-left: 0; }
   .status-label { margin-left: 0; }
-  .worker-meta { margin-left: 0; }
+  .session-id, .worker-model, .worker-source { margin-left: 0; }
+  .exchanges { padding-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: .001ms !important; }

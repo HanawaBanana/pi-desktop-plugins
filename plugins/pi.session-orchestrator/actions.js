@@ -1,455 +1,288 @@
 "use strict";
 
 const {
-  ACTIVE_STATUSES,
-  MAX_ACCEPTANCE_NOTE_CHARS,
-  MAX_WORKERS_PER_PARENT,
+  MAX_SELECTED_SESSIONS,
   POLL_INTERVAL_MS,
+  PREFIX,
   TERMINAL_STATUSES,
-  assertOrchestratorSession,
-  desktop,
-  desktopOperations,
-  getSession,
-  getWorkerStore,
-  sessionIdsFromArgs,
-  nextSupervisionRound,
-  now,
-  parentIdFromContext,
-  permissionInheritanceError,
-  publicWorker,
-  recordForParent,
-  recordsForParent,
-  refreshRecord,
-  refreshRecords,
-  releaseSpawn,
-  reserveSpawn,
-  resolveModel,
-  resolveThinkingLevel,
-  sendToWorker,
-  sessionFromResponse,
-  shorten,
-  sleepWithSignal,
+  contextSessionId,
+  deliveryOptions,
+  optionalText,
+  selectedSessionIds,
+  targetSessionId,
   taskError,
   text,
-  optionalText,
-  withWorkerLock,
-  targetSessionId,
   waitTimeout,
 } = require("./runtime.js");
+const { MAX_ACCEPTANCE_NOTE_CHARS } = require("./state.js");
+const { catalog, selectModel } = require("./models.js");
 
-const MAX_TASK_CHARS = 65_536;
-const MAX_TITLE_CHARS = 80;
-const MAX_MESSAGE_CHARS = 65_536;
-
-function errorMessage(error) {
-  return shorten(error?.message ?? String(error), 2_000);
+function resultSelector(args, sessionId) {
+  const messageId = optionalText(args.messageId, "messageId");
+  const turnId = optionalText(args.turnId, "turnId");
+  return { sessionId, ...(messageId ? { messageId } : {}), ...(turnId ? { turnId } : {}) };
 }
 
-function workerPrompt(task) {
-  return [
-    "You are a PI-Desktop worker session managed by a parent Agent.",
-    "Complete the task below using this session only.",
-    "Do not create or control other sessions, and do not invoke SessionTask.",
-    "If a later follow-up needs more research, continue from this session's existing context; do not create a replacement session.",
-    "Return a concise final report with findings, changed files, and verification when relevant.",
-    "",
-    "Task:",
-    task,
-  ].join("\n");
+function resultWorker(sessionId, result) {
+  const message = result.message;
+  return {
+    sessionId,
+    status: message?.status || "idle",
+    ...(message ? { messageId: message.id, task: String(message.content || "").slice(0, 240), title: message.targetTitle } : {}),
+    ...(message?.turnId ? { turnId: message.turnId } : {}),
+    ...(message?.status === "completed" && message.result ? { report: message.result } : {}),
+    ...(message?.error ? { error: message.error } : {}),
+  };
 }
 
-async function spawnWorker(args, ctx) {
-  const parentSessionId = parentIdFromContext(ctx);
-  assertOrchestratorSession(parentSessionId);
-  const task = text(args.task, "task", MAX_TASK_CHARS);
-  const title = optionalText(args.title, "title", MAX_TITLE_CHARS) || shorten(task, MAX_TITLE_CHARS);
+function createActions(runtime) {
+  const store = runtime.store;
 
-  reserveSpawn(parentSessionId);
-  let record = null;
-  try {
-    const parentSession = await getSession(parentSessionId, 1, 4_096);
-    const model = await resolveModel(args.model, parentSession, ctx);
-    const thinkingLevel = resolveThinkingLevel(parentSession, ctx);
-    const input = {
-      title,
-      mode: "agent",
-      inheritPermissionFromSessionId: parentSessionId,
-      ...(typeof parentSession.projectPath === "string" && parentSession.projectPath.trim()
-        ? { projectPath: parentSession.projectPath.trim() }
-        : {}),
-      ...(model.providerId ? { providerId: model.providerId } : {}),
-      ...(model.modelId ? { modelId: model.modelId } : {}),
-      ...(thinkingLevel ? { thinkingLevel } : {}),
+  function withAcceptance(summary, owner) {
+    const messageId = summary.currentTask?.messageId || summary.result?.messageId;
+    const accepted = messageId ? store.accepted(summary.sessionId, messageId, owner) : undefined;
+    return {
+      ...summary,
+      acceptanceStatus: accepted ? "accepted" : "pending",
+      ...(accepted ? { acceptance: accepted } : {}),
     };
+  }
 
-    const created = sessionFromResponse(
-      await desktop("session/create", [input]),
-      "session/create",
-    );
-    record = {
-      parentSessionId,
-      sessionId: created.id,
+  async function readStatus(sessionId, options) {
+    const value = await runtime.call("status", { sessionId }, options);
+    if (!value || value.sessionId !== sessionId || typeof value.status !== "string") {
+      throw taskError("INTERNAL", "Host returned an invalid session status");
+    }
+    return value;
+  }
+
+  async function readResult(selector, options) {
+    const value = await runtime.call("result", selector, options);
+    if (!value || typeof value.ready !== "boolean" ||
+        (value.ready && !value.message) ||
+        (value.message && (typeof value.message.id !== "string" || !value.message.id ||
+          !["queued", "running", ...TERMINAL_STATUSES].includes(value.message.status))) ||
+        (value.message?.result !== undefined && typeof value.message.result !== "string") ||
+        (value.ready && !TERMINAL_STATUSES.has(value.message?.status)) ||
+        (value.message && value.message.targetSessionId !== selector.sessionId) ||
+        (selector.messageId && value.message && value.message.id !== selector.messageId) ||
+        (selector.turnId && value.message && value.message.turnId !== selector.turnId)) {
+      throw taskError("INTERNAL", "Host returned a result for a different session delivery");
+    }
+    return value;
+  }
+
+  function validateDelivery(value) {
+    if (!value || typeof value.sessionId !== "string" || typeof value.messageId !== "string" ||
+        typeof value.status !== "string") throw taskError("INTERNAL", "Host did not return a delivery receipt");
+    return value;
+  }
+
+  async function spawn(args, ctx) {
+    const owner = contextSessionId(ctx);
+    const task = text(args.task, "task", 65_536);
+    const title = optionalText(args.title, "title", 80);
+    const options = deliveryOptions(args);
+    await runtime.ensureOperation(PREFIX + "spawn", { signal: ctx.signal });
+    const selected = selectModel(await runtime.models({ signal: ctx.signal }), args.model);
+    const receipt = validateDelivery(await runtime.call("spawn", {
       task,
-      title,
-      status: "created",
-      createdAt: now(),
-      ...(model.modelKey ? { modelKey: model.modelKey } : {}),
+      ...(title ? { title } : {}),
+      modelKey: selected.model.key,
+      ...options,
+    }, { signal: ctx.signal, read: false }));
+    const warning = await runtime.remember(receipt.sessionId, owner, title || task.slice(0, 80));
+    return {
+      action: "spawn", ...receipt, accepted: true,
+      requestedModel: selected.model.key, modelSelection: selected.selection,
+      ...(warning ? { warning } : {}),
     };
-    await getWorkerStore().upsert(record);
+  }
 
+  async function send(args, ctx) {
+    const owner = contextSessionId(ctx);
+    const sessionId = targetSessionId(args);
+    const content = text(args.message, "message", 65_536);
+    if (args.model !== undefined) throw taskError("INVALID_ARGUMENT", "send reuses the session's existing model; model is only valid for spawn");
+    if (args.kind !== undefined && !["task", "message"].includes(args.kind)) {
+      throw taskError("INVALID_ARGUMENT", "kind must be task or message");
+    }
+    const receipt = validateDelivery(await runtime.call("send", {
+      sessionId, content, ...(args.kind ? { kind: args.kind } : {}), ...deliveryOptions(args),
+    }, { signal: ctx.signal, read: false }));
+    if (receipt.sessionId !== sessionId) throw taskError("INTERNAL", "Host returned a delivery for a different session");
+    const warning = await runtime.remember(sessionId, owner);
+    return { action: "send", ...receipt, accepted: true, ...(warning ? { warning } : {}) };
+  }
+
+  async function status(args, ctx, action = "status") {
+    const owner = contextSessionId(ctx);
+    await runtime.ensureOperation(PREFIX + "status", { signal: ctx.signal });
+    const ids = selectedSessionIds(args) || store.list(owner, MAX_SELECTED_SESSIONS).map((entry) => entry.sessionId);
+    const workers = await Promise.all(ids.map((id) => readStatus(id, { signal: ctx.signal })));
+    return { action, workers: workers.map((entry) => withAcceptance(entry, owner)) };
+  }
+
+  async function result(args, ctx) {
+    const owner = contextSessionId(ctx);
+    const sessionId = targetSessionId(args);
+    const value = await readResult(resultSelector(args, sessionId), { signal: ctx.signal });
+    const warning = await runtime.remember(sessionId, owner, value.message?.targetTitle);
+    return {
+      action: "result", ...value,
+      worker: resultWorker(sessionId, value),
+      ...(warning ? { warning } : {}),
+    };
+  }
+
+  async function wait(args, ctx) {
+    const owner = contextSessionId(ctx);
+    const ids = selectedSessionIds(args, true);
+    if ((args.messageId || args.turnId) && ids.length !== 1) {
+      throw taskError("INVALID_ARGUMENT", "A specific messageId or turnId requires one sessionId");
+    }
+    const deadline = Date.now() + waitTimeout(args.timeoutMs);
+    const options = { signal: ctx.signal, deadline };
+    let workers = ids.map((sessionId) => ({ sessionId, status: "unknown" }));
     try {
-      const result = await withWorkerLock(record.sessionId, async () => {
-        const latest = getWorkerStore().get(record.sessionId) ?? record;
-        if (TERMINAL_STATUSES.has(latest.status)) {
-          throw taskError("ABORTED", "worker was stopped before its first prompt");
+      while (true) {
+        runtime.assertActive(ctx.signal);
+        if (args.messageId || args.turnId) {
+          const value = await readResult(resultSelector(args, ids[0]), options);
+          workers = [resultWorker(ids[0], value)];
+          if (value.message && TERMINAL_STATUSES.has(value.message.status)) {
+            return { action: "wait", timedOut: false, workers, results: [value] };
+          }
+        } else {
+          workers = await Promise.all(ids.map((id) => readStatus(id, options)));
+          runtime.assertActive(ctx.signal);
+          if (workers.every((entry) => TERMINAL_STATUSES.has(entry.status) || entry.status === "idle")) {
+            const results = await Promise.all(workers.map((entry) => {
+              const messageId = entry.currentTask?.messageId || entry.result?.messageId;
+              return readResult({ sessionId: entry.sessionId, ...(messageId ? { messageId } : {}) }, options);
+            }));
+            runtime.assertActive(ctx.signal);
+            return {
+              action: "wait", timedOut: false,
+              workers: workers.map((entry, index) => ({
+                ...withAcceptance(entry, owner), ...resultWorker(entry.sessionId, results[index]),
+              })),
+              results,
+            };
+          }
         }
-        const inheritanceError = permissionInheritanceError(parentSession, created);
-        if (inheritanceError) {
-          await getWorkerStore().update(record.sessionId, {
-            status: "failed",
-            error: errorMessage(inheritanceError),
-          });
-          throw inheritanceError;
-        }
-        return sendToWorker(
-          latest,
-          workerPrompt(task),
-          parentSessionId,
-        );
-      });
-      return {
-        action: "spawn",
-        sessionId: created.id,
-        title,
-        status: "running",
-        ...result,
-      };
+        await runtime.sleep(Math.min(POLL_INTERVAL_MS, Math.max(1, deadline - Date.now())), options);
+      }
     } catch (error) {
-      await getWorkerStore().update(record.sessionId, {
-        status: "failed",
-        error: errorMessage(error),
-      });
-      throw error;
+      if (error.code !== "WAIT_TIMEOUT") throw error;
+      return { action: "wait", timedOut: true, workers };
     }
-  } finally {
-    releaseSpawn(parentSessionId);
   }
-}
 
-async function sendWorker(args, ctx, { preflight = true } = {}) {
-  const parentSessionId = parentIdFromContext(ctx);
-  assertOrchestratorSession(parentSessionId);
-  const id = targetSessionId(args);
-  const message = text(args.message, "message", MAX_MESSAGE_CHARS);
+  async function supervise(args, ctx) {
+    contextSessionId(ctx);
+    const ids = selectedSessionIds(args, true);
+    if (ids.length > 4) throw taskError("LIMIT_EXCEEDED", "Select at most four sessions for supervise");
+    text(args.message, "message", 65_536);
+    deliveryOptions(args);
+    if (args.idempotencyKey) throw taskError("INVALID_ARGUMENT", "Use send with a distinct idempotencyKey for each session");
+    const settled = await Promise.allSettled(ids.map((sessionId) => send({ ...args, sessionId, workerId: undefined }, ctx)));
+    const workers = [];
+    const failures = [];
+    settled.forEach((entry, index) => {
+      if (entry.status === "fulfilled") {
+        const { action, ...receipt } = entry.value;
+        workers.push(receipt);
+      } else {
+        failures.push({ sessionId: ids[index], code: entry.reason?.code || "UNKNOWN", message: String(entry.reason?.message || entry.reason) });
+      }
+    });
+    return { action: "supervise", accepted: failures.length === 0, workers, ...(failures.length ? { failures } : {}) };
+  }
 
-  return withWorkerLock(id, async () => {
-    const record = recordForParent(parentSessionId, id);
-    const stored = getWorkerStore().get(id) ?? record;
-    const current = preflight ? await refreshRecord(stored, false) : stored;
-    if (ACTIVE_STATUSES.has(current.status)) {
-      throw taskError("AGENT_BUSY", "worker is still active");
+  async function accept(args, ctx) {
+    const owner = contextSessionId(ctx);
+    const ids = selectedSessionIds(args, true);
+    if ((args.messageId || args.turnId) && ids.length !== 1) {
+      throw taskError("INVALID_ARGUMENT", "A specific messageId or turnId requires one sessionId");
     }
-
-    reserveSpawn(parentSessionId);
-    try {
-      const round = nextSupervisionRound(current);
-      return {
-        action: "send",
-        ...(await sendToWorker(current, message, parentSessionId, round)),
-      };
-    } finally {
-      releaseSpawn(parentSessionId);
+    const note = optionalText(args.note, "note", MAX_ACCEPTANCE_NOTE_CHARS);
+    const results = await Promise.all(ids.map((sessionId) => readResult(resultSelector(args, sessionId), { signal: ctx.signal })));
+    if (results.some((entry) => !entry.ready || entry.message?.status !== "completed" || !entry.message.result?.trim())) {
+      throw taskError("WORKER_NOT_READY", "Only a completed host delivery with a final report can be accepted");
     }
-  });
-}
-
-async function superviseWorkers(args, ctx) {
-  const parentSessionId = parentIdFromContext(ctx);
-  assertOrchestratorSession(parentSessionId);
-  const ids = sessionIdsFromArgs(args, true);
-  if (ids.length > MAX_WORKERS_PER_PARENT) {
-    throw taskError(
-      "LIMIT_EXCEEDED",
-      `at most ${MAX_WORKERS_PER_PARENT} workers may receive one supervision round`,
-    );
-  }
-  const message = text(args.message, "message", MAX_MESSAGE_CHARS);
-  const records = recordsForParent(parentSessionId, ids);
-  const refreshed = await refreshRecords(records, false);
-  const busy = refreshed.filter((record) => ACTIVE_STATUSES.has(record.status));
-  if (busy.length > 0) {
-    throw taskError(
-      "AGENT_BUSY",
-      `workers are still active: ${busy.map((record) => record.sessionId).join(", ")}`,
-    );
+    runtime.assertActive(ctx.signal);
+    const acceptedAt = new Date().toISOString();
+    const acceptances = results.map((entry, index) => ({
+      sessionId: ids[index], messageId: entry.message.id, acceptedBySessionId: owner,
+      acceptedAt, ...(note ? { note } : {}),
+    }));
+    await store.accept(acceptances);
+    return {
+      action: "accept", accepted: true, acceptances,
+      workers: results.map((entry, index) => ({ ...resultWorker(ids[index], entry), acceptanceStatus: "accepted", acceptance: acceptances[index] })),
+    };
   }
 
-  const workers = await Promise.all(
-    ids.map((id) => sendWorker({ sessionId: id, message }, ctx, { preflight: false })),
-  );
-  return {
-    action: "supervise",
-    workers: workers.map(({ action, ...worker }) => worker),
-  };
-}
-
-function acceptanceSessionIds(args) {
-  if (args.sessionIds !== undefined || args.workerIds !== undefined) {
-    return sessionIdsFromArgs(args, true);
-  }
-  if (args.sessionId !== undefined || args.workerId !== undefined) return [targetSessionId(args)];
-  throw taskError("INVALID_ARGUMENT", "accept requires sessionId or sessionIds");
-}
-
-async function acceptWorkers(args, ctx) {
-  const parentSessionId = parentIdFromContext(ctx);
-  assertOrchestratorSession(parentSessionId);
-  const ids = acceptanceSessionIds(args);
-  const note = optionalText(
-    args.note,
-    "note",
-    MAX_ACCEPTANCE_NOTE_CHARS,
-  );
-  const records = recordsForParent(parentSessionId, ids);
-  const refreshed = await refreshRecords(records, true);
-  const notReady = refreshed.filter(
-    (record) => record.status !== "completed" || !record.report,
-  );
-  if (notReady.length > 0) {
-    throw taskError(
-      "WORKER_NOT_READY",
-      `workers must have a completed final report before acceptance: ${notReady
-        .map((record) => `${record.sessionId} (${record.status})`)
-        .join(", ")}`,
-    );
+  async function cancel(args, ctx) {
+    contextSessionId(ctx);
+    const sessionId = targetSessionId(args);
+    const messageId = optionalText(args.messageId, "messageId");
+    const cancelled = await runtime.call("cancel", {
+      sessionId, ...(messageId ? { messageId } : {}),
+    }, { signal: ctx.signal, read: false });
+    return { action: "cancel", ...cancelled };
   }
 
-  const acceptedAt = now();
-  await Promise.all(
-    refreshed.map((record) =>
-      getWorkerStore().update(record.sessionId, {
-        acceptanceStatus: "accepted",
-        acceptedAt,
-        acceptanceRound: record.round,
-        ...(note ? { acceptanceNote: note } : {}),
+  async function execute(args, ctx) {
+    runtime.assertActive(ctx?.signal);
+    if (!args || typeof args !== "object" || Array.isArray(args)) throw taskError("INVALID_ARGUMENT", "SessionTask arguments must be an object");
+    const action = text(args.action, "action", 32);
+    switch (action) {
+      case "spawn": return spawn(args, ctx);
+      case "send": return send(args, ctx);
+      case "status": return status(args, ctx);
+      case "list": return status(args, ctx, "list");
+      case "result": return result(args, ctx);
+      case "wait": return wait(args, ctx);
+      case "supervise": return supervise(args, ctx);
+      case "accept": return accept(args, ctx);
+      case "cancel": return cancel(args, ctx);
+      case "models": {
+        contextSessionId(ctx);
+        const models = catalog(await runtime.models({ signal: ctx.signal }));
+        return { action, models, automaticCandidates: models.filter((row) => row.availableForSubagents), defaultModel: models.find((row) => row.isDefault)?.key || null };
+      }
+      default: throw taskError("INVALID_ARGUMENT", `Unsupported SessionTask action: ${action}`);
+    }
+  }
+
+  async function panelList() {
+    await runtime.ensureOperation(PREFIX + "status");
+    const refs = store.list(undefined, 50);
+    const settled = await Promise.allSettled(refs.map((entry) => readStatus(entry.sessionId)));
+    runtime.assertActive();
+    return {
+      workers: settled.map((entry, index) => entry.status === "fulfilled" ? entry.value : {
+        sessionId: refs[index].sessionId, title: refs[index].title, status: "unavailable",
+        error: String(entry.reason?.message || entry.reason), recentExchanges: [],
       }),
-    ),
-  );
-  const accepted = ids
-    .map((id) => getWorkerStore().get(id))
-    .filter(Boolean);
-  return {
-    action: "accept",
-    accepted: true,
-    workers: accepted.map((record) => publicWorker(record, true)),
-  };
-}
-
-async function statusWorkers(args, ctx) {
-  const parentSessionId = parentIdFromContext(ctx);
-  assertOrchestratorSession(parentSessionId);
-  const ids = sessionIdsFromArgs(args);
-  const records = recordsForParent(parentSessionId, ids);
-  const refreshed = await refreshRecords(records, false);
-  return {
-    action: "status",
-    workers: refreshed.map((record) => publicWorker(record, false)),
-  };
-}
-
-async function waitWorkers(args, ctx) {
-  const parentSessionId = parentIdFromContext(ctx);
-  assertOrchestratorSession(parentSessionId);
-  const ids = sessionIdsFromArgs(args, true);
-  const timeoutMs = waitTimeout(args.timeoutMs);
-  const deadline = Date.now() + timeoutMs;
-
-  while (true) {
-    if (ctx?.signal?.aborted) {
-      throw taskError("ABORTED", "wait was cancelled");
-    }
-
-    const records = recordsForParent(parentSessionId, ids);
-    const refreshed = await refreshRecords(records, false);
-    if (refreshed.every((record) => TERMINAL_STATUSES.has(record.status))) {
-      const withReports = await refreshRecords(refreshed, true);
-      return {
-        action: "wait",
-        timedOut: false,
-        workers: withReports.map((record) => publicWorker(record, true)),
-      };
-    }
-
-    if (Date.now() >= deadline) {
-      return {
-        action: "wait",
-        timedOut: true,
-        workers: refreshed.map((record) => publicWorker(record, false)),
-      };
-    }
-
-    await sleepWithSignal(
-      Math.min(POLL_INTERVAL_MS, Math.max(1, deadline - Date.now())),
-      ctx?.signal,
-    );
+    };
   }
-}
 
-async function resultWorker(args, ctx) {
-  const parentSessionId = parentIdFromContext(ctx);
-  assertOrchestratorSession(parentSessionId);
-  const id = targetSessionId(args);
-
-  return withWorkerLock(id, async () => {
-    const record = recordForParent(parentSessionId, id);
-    const refreshed = await refreshRecord(record, true);
-    return {
-      action: "result",
-      ready: refreshed.status === "completed",
-      worker: publicWorker(refreshed, true),
-    };
-  });
-}
-
-async function cancelWorker(args, ctx) {
-  const parentSessionId = parentIdFromContext(ctx);
-  assertOrchestratorSession(parentSessionId);
-  const id = targetSessionId(args);
-
-  return withWorkerLock(id, async () => {
-    const record = recordForParent(parentSessionId, id);
-    const current = await refreshRecord(record, false);
-    if (TERMINAL_STATUSES.has(current.status)) {
-      return {
-        action: "cancel",
-        worker: publicWorker(current, false),
-        sessionRetained: true,
-      };
-    }
-
-    if (ACTIVE_STATUSES.has(current.status)) {
-      await desktop("agent/abort", [{ sessionId: current.sessionId }]);
-    }
-
-    const cancelled = {
-      ...current,
-      status: "cancelled",
-      error: undefined,
-    };
-    await getWorkerStore().upsert(cancelled);
-    return {
-      action: "cancel",
-      worker: publicWorker(cancelled, false),
-      sessionRetained: true,
-    };
-  });
-}
-
-async function listWorkers(args, ctx) {
-  const parentSessionId = parentIdFromContext(ctx);
-  assertOrchestratorSession(parentSessionId);
-  const records = recordsForParent(parentSessionId);
-  const refreshed = await refreshRecords(records, false);
-  return {
-    action: "list",
-    workers: refreshed.map((record) => publicWorker(record, false)),
-  };
-}
-
-async function executeSessionTask(args, ctx) {
-  if (!args || typeof args !== "object" || Array.isArray(args)) {
-    throw taskError("INVALID_ARGUMENT", "SessionTask arguments must be an object");
+  async function panelCancel(payload) {
+    const sessionId = targetSessionId(payload);
+    const cancelled = await runtime.call("cancel", { sessionId }, { read: false });
+    return { ok: true, ...cancelled };
   }
-  const action = text(args.action, "action", 32);
-  switch (action) {
-    case "spawn":
-      return spawnWorker(args, ctx);
-    case "send":
-      return sendWorker(args, ctx);
-    case "supervise":
-      return superviseWorkers(args, ctx);
-    case "status":
-      return statusWorkers(args, ctx);
-    case "wait":
-      return waitWorkers(args, ctx);
-    case "result":
-      return resultWorker(args, ctx);
-    case "accept":
-      return acceptWorkers(args, ctx);
-    case "cancel":
-      return cancelWorker(args, ctx);
-    case "list":
-      return listWorkers(args, ctx);
-    default:
-      throw taskError("INVALID_ARGUMENT", `unsupported SessionTask action: ${action}`);
+
+  async function panelOpen(payload) {
+    const sessionId = targetSessionId(payload);
+    await runtime.invoke("session/open", sessionId, { read: false });
+    return { ok: true, sessionId };
   }
+
+  return { execute, panelList, panelCancel, panelOpen };
 }
 
-function panelRecord(id) {
-  const record = getWorkerStore().get(targetSessionId(id));
-  if (!record) throw taskError("NOT_FOUND", "worker not found");
-  return record;
-}
-
-async function panelList() {
-  const records = await refreshRecords(getWorkerStore().all(), false);
-  return {
-    workers: records
-      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
-      .map((record) => publicWorker(record, false)),
-  };
-}
-
-async function panelCancel(payload) {
-  const id = targetSessionId(payload);
-  return withWorkerLock(id, async () => {
-    const record = panelRecord(id);
-    const current = await refreshRecord(record, false);
-    if (TERMINAL_STATUSES.has(current.status)) {
-      return {
-        ok: true,
-        worker: publicWorker(current, false),
-        sessionRetained: true,
-      };
-    }
-    if (ACTIVE_STATUSES.has(current.status)) {
-      await desktop("agent/abort", [{ sessionId: current.sessionId }]);
-    }
-    const cancelled = {
-      ...current,
-      status: "cancelled",
-      error: undefined,
-    };
-    await getWorkerStore().upsert(cancelled);
-    return {
-      ok: true,
-      worker: publicWorker(cancelled, false),
-      sessionRetained: true,
-    };
-  });
-}
-
-async function panelOpen(payload) {
-  const record = panelRecord(payload);
-  const operations = await desktopOperations();
-  if (!operations.some((operation) => operation.id === "session/open")) {
-    throw taskError(
-      "UNSUPPORTED",
-      "this PI-Desktop host cannot open a session from a plugin panel; update the host or use the session list",
-    );
-  }
-  await desktop("session/open", [record.sessionId]);
-  return { ok: true, sessionId: record.sessionId };
-}
-
-module.exports = {
-  executeSessionTask,
-  panelCancel,
-  panelList,
-  panelOpen,
-  __test: {
-    executeSessionTask,
-    permissionInheritanceError,
-    workerPrompt,
-  },
-};
+module.exports = { createActions };
