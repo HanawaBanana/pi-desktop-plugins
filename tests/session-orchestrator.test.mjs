@@ -1,672 +1,346 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { clone, deferred, delay, loadHarness, model, pluginRoot, prefix } from "./session-orchestrator.harness.mjs";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const require = createRequire(import.meta.url);
-const root = join(here, "..");
-const pluginRoot = join(root, "plugins", "pi.session-orchestrator");
 const manifest = JSON.parse(readFileSync(join(pluginRoot, "manifest.json"), "utf8"));
-const panel = readFileSync(join(pluginRoot, manifest.ui.panel), "utf8");
-const panelSource = readFileSync(join(pluginRoot, "renderer/panel.js"), "utf8");
-const mainSource = readFileSync(join(pluginRoot, "main.js"), "utf8");
-const actionsSource = readFileSync(join(pluginRoot, "actions.js"), "utf8");
-const runtimeSource = readFileSync(join(pluginRoot, "runtime.js"), "utf8");
+const rejectsCode = (code) => (error) => error.code === code;
 
-test("manifest declares the durable worker tool, panel and bounded permissions", () => {
+test("manifest and registration share the bounded reviewed tool schema", async (t) => {
+  const h = await loadHarness(t);
+  assert.equal(manifest.version, "0.4.0");
   assert.equal(manifest.schemaVersion, 1);
   assert.equal(manifest.id, "pi.session-orchestrator");
-  assert.equal(manifest.version, "0.3.0");
-  assert.equal(manifest.main, "main.js");
-  assert.deepEqual(manifest.permissions, [
-    "ui.panel",
-    "agent.tool.register",
-    "desktop.control",
-    "models.list",
-  ]);
-  assert.deepEqual(
-    manifest.contributes.agentTools.map((tool) => tool.name),
-    ["SessionTask"],
-  );
-  assert.equal(manifest.contributes.agentTools[0].risk, "high");
-  assert.match(manifest.contributes.agentTools[0].description, /supervise/);
-  assert.match(manifest.contributes.agentTools[0].description, /accept/);
-  assert.deepEqual(
-    manifest.contributes.agentTools[0].schema.properties.action.enum,
-    [
-      "spawn",
-      "send",
-      "supervise",
-      "status",
-      "wait",
-      "result",
-      "accept",
-      "cancel",
-      "list",
-    ],
-  );
-  assert.equal(manifest.ui.panel, "renderer/index.html");
-  assert.ok(manifest.i18n.en.safetyNotes);
-  assert.ok(manifest.i18n["zh-CN"].safetyNotes);
+  assert.deepEqual(manifest.permissions, ["ui.panel", "agent.tool.register", "desktop.control", "models.list"]);
+  const descriptor = manifest.contributes.agentTools[0];
+  assert.deepEqual(h.registered.tool.schema, descriptor.schema);
+  assert.equal(h.registered.tool.description, descriptor.description);
+  assert.equal(descriptor.risk, "high");
+  assert.deepEqual(descriptor.schema.properties.action.enum,
+    ["spawn", "send", "supervise", "status", "wait", "result", "accept", "cancel", "list", "models"]);
+  for (const locale of ["en", "zh-CN"]) {
+    assert.ok(manifest.i18n[locale].description);
+    assert.ok(manifest.i18n[locale].safetyNotes);
+  }
+  assert.equal(descriptor.schema.properties.timeoutMs.maximum, 45_000);
+  assert.equal(descriptor.schema.properties.note.maxLength, 4_096);
+  assert.equal(descriptor.schema.additionalProperties, false);
   assert.match(manifest.engines.piDesktop, /^>=0\.14\.7/);
-  assert.match(manifest.safetyNotes, /desktop\.control/);
-  assert.equal(manifest.contributes.agentTools[0].schema.properties.note.maxLength, 4096);
-  assert.equal(manifest.contributes.agentTools[0].schema.properties.timeoutMs.maximum, 45000);
-  assert.equal(manifest.contributes.agentTools[0].schema.properties.sessionId.type, "string");
-  assert.equal(manifest.contributes.agentTools[0].schema.properties.sessionIds.type, "array");
+  assert.equal(h.registered.command.id, "pi.session-orchestrator.open");
 });
 
-test("panel uses the host-owned v3 chrome and only the plugin bridge", () => {
-  assert.match(panel, /<meta\s+name="pi-plugin-chrome"\s+content="v3"\s*\/>/);
-  assert.match(panel, /PI-Desktop owns exactly a transparent 46px drag band/);
-  assert.match(panel, /three-button[\s\S]*window-control capsule/);
-  assert.match(panel, /var\(--pi-plugin-titlebar-height, 46px\)/);
-  assert.match(panel, /appearance-boot\.js/);
-  assert.match(panel, /appearance\.js/);
-  assert.match(panel, /capsule-retint\.js/);
-  assert.match(panelSource, /pluginBridge/);
-  assert.match(panelSource, /acceptanceStatus/);
-  assert.match(panelSource, /roundLabel/);
-  assert.match(panelSource, /data-open=.*worker\.sessionId/);
-  assert.doesNotMatch(panelSource, /worker\.workerId/);
-  assert.doesNotMatch(panel, /https?:\/\//i);
-});
-
-test("source stays on the reviewed desktop gateway and never creates a second session system", () => {
-  const source = [mainSource, actionsSource, runtimeSource].join("\n");
-  assert.match(source, /session\/create/);
-  assert.match(source, /agent\/prompt/);
-  assert.match(source, /agent\/getStatus/);
-  assert.match(source, /agent\/abort/);
-  assert.match(source, /session\/get/);
-  assert.doesNotMatch(source, /session\/fork/);
-  assert.doesNotMatch(source, /session\/delete/);
-  assert.doesNotMatch(source, /localhost|127\.0\.0\.1|MCP bearer|mcp token/i);
-  assert.doesNotMatch(source, /child_process|node:net|fetch\s*\(/);
-  assert.match(source, /inheritPermissionFromSessionId/);
-  assert.match(source, /MAX_WORKERS_PER_PARENT/);
-  assert.match(source, /WAIT_TIMEOUT_MS/);
-  assert.match(source, /sessionId/);
-  assert.match(source, /existing context/);
-  assert.match(source, /DESKTOP_READ_TIMEOUT_MS/);
-  assert.match(source, /Worker sessions cannot create or control other workers/);
-});
-
-test("refuses to load when relationship settings cannot be read", async (t) => {
-  const previousPi = globalThis.pi;
-  const harness = makeHarness();
-  let writes = 0;
-  harness.pi.plugin.getSettings = async () => {
-    throw new Error("settings unavailable");
+test("parallel spawn uses atomic host deliveries, model eligibility and original Session IDs", async (t) => {
+  const h = await loadHarness(t);
+  let active = 0;
+  let maximum = 0;
+  h.beforeInvoke = async ({ operation }) => {
+    if (operation !== prefix + "spawn") return;
+    maximum = Math.max(maximum, ++active);
+    await delay(10);
+    active -= 1;
   };
-  harness.pi.plugin.setSettings = async () => {
-    writes += 1;
-  };
-  globalThis.pi = harness.pi;
-  clearPluginCache();
-  const activeMain = require(join(pluginRoot, "main.js"));
-  t.after(async () => {
-    await activeMain.onUnload();
-    clearPluginCache();
-    if (previousPi === undefined) delete globalThis.pi;
-    else globalThis.pi = previousPi;
-  });
-
-  await assert.rejects(activeMain.onLoad(), /settings unavailable/);
-  assert.equal(harness.registered.tool, null);
-  assert.equal(writes, 0);
-});
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function clearPluginCache() {
-  for (const key of Object.keys(require.cache)) {
-    if (key.startsWith(pluginRoot)) delete require.cache[key];
+  const spawned = await Promise.all(["Frontend", "Electron", "Rust"].map((title) =>
+    h.execute({ action: "spawn", task: `Review ${title}`, title })));
+  assert.ok(maximum >= 2);
+  assert.equal(new Set(spawned.map((entry) => entry.sessionId)).size, 3);
+  for (const entry of spawned) {
+    assert.equal(entry.status, "queued");
+    assert.ok(entry.messageId);
+    assert.equal(entry.requestedModel, "allowed/claude-sonnet-4-6");
+    assert.equal(entry.modelSelection, "delegation");
+    assert.equal("workerId" in entry, false);
+    assert.equal(h.messages.get(entry.messageId).sourceSessionId, "parent");
   }
-}
-
-function makeHarness({ inheritPermission = true, initialSettings } = {}) {
-  const settings = clone(initialSettings ?? { workers: [] });
-  const calls = [];
-  const sessions = new Map([
-    [
-      "parent",
-      {
-        id: "parent",
-        projectPath: "/repo",
-        providerId: "anthropic",
-        modelId: "claude",
-        thinkingLevel: "high",
-        permissionMode: "accept-edits",
-        messages: [],
-      },
-    ],
-  ]);
-  const running = new Map();
-  let nextWorker = 0;
-  let nextTurn = 0;
-  let promptInFlight = 0;
-  let maxPromptInFlight = 0;
-  const registered = { command: null, tool: null };
-
-  const pi = {
-    plugin: {
-      getSettings: async () => clone(settings),
-      setSettings: async (partial) => {
-        Object.assign(settings, clone(partial));
-      },
-    },
-    commands: {
-      register: async (command) => {
-        registered.command = command;
-      },
-      unregister: async () => {
-        registered.command = null;
-      },
-    },
-    agent: {
-      registerTool: async (tool) => {
-        registered.tool = tool;
-      },
-      unregisterTool: async () => {
-        registered.tool = null;
-      },
-    },
-    models: {
-      list: async () => [
-        {
-          key: "anthropic/claude",
-          providerId: "anthropic",
-          modelId: "claude",
-          providerName: "Anthropic",
-          label: "Claude",
-          supportsReasoning: true,
-          thinkingLevels: ["low", "medium", "high"],
-        },
-        {
-          key: "openai/gpt",
-          providerId: "openai",
-          modelId: "gpt",
-          providerName: "OpenAI",
-          label: "GPT",
-          supportsReasoning: true,
-          thinkingLevels: ["low", "high"],
-        },
-      ],
-    },
-    ui: {
-      openPanel: async () => undefined,
-      showToast: async () => undefined,
-    },
-    desktop: {
-      listOperations: async () => [
-        { id: "session/get", risk: "read" },
-        { id: "session/create", risk: "write" },
-        { id: "agent/prompt", risk: "write" },
-        { id: "agent/getStatus", risk: "read" },
-        { id: "agent/abort", risk: "write" },
-        { id: "session/open", risk: "write" },
-      ],
-      invoke: async ({ operation, args }) => {
-        calls.push({ operation, args: clone(args) });
-        if (operation === "session/get") {
-          const request = args[0];
-          const session = sessions.get(request.id);
-          if (!session) {
-            throw Object.assign(new Error("not found"), { code: "NOT_FOUND" });
-          }
-          return { session: clone(session) };
-        }
-        if (operation === "session/create") {
-          await delay(5);
-          const input = args[0];
-          const id = "worker-" + (++nextWorker);
-          const parent = sessions.get(input.inheritPermissionFromSessionId);
-          const session = {
-            id,
-            title: input.title,
-            projectPath: input.projectPath,
-            providerId: input.providerId,
-            modelId: input.modelId,
-            thinkingLevel: input.thinkingLevel,
-            permissionMode: inheritPermission
-              ? parent.permissionMode
-              : "inherit",
-            messages: [],
-          };
-          sessions.set(id, session);
-          running.set(id, { isRunning: false, prompt: null });
-          return { session: clone(session) };
-        }
-        if (operation === "agent/prompt") {
-          const request = args[0];
-          const state = running.get(request.sessionId);
-          if (!state) throw Object.assign(new Error("not found"), { code: "NOT_FOUND" });
-          promptInFlight += 1;
-          maxPromptInFlight = Math.max(maxPromptInFlight, promptInFlight);
-          state.isRunning = true;
-          state.prompt = request.content;
-          await delay(5);
-          promptInFlight -= 1;
-          return { accepted: true, turnId: "turn-" + (++nextTurn) };
-        }
-        if (operation === "agent/getStatus") {
-          const state = running.get(args[0]);
-          return {
-            status: {
-              sessionId: args[0],
-              isRunning: Boolean(state?.isRunning),
-              pendingToolConfirmations: 0,
-            },
-          };
-        }
-        if (operation === "agent/abort") {
-          const state = running.get(args[0].sessionId);
-          if (state) state.isRunning = false;
-          return { ok: true };
-        }
-        if (operation === "session/open") return { ok: true };
-        throw new Error("unexpected operation: " + operation);
-      },
-    },
-  };
-
-  return {
-    pi,
-    settings,
-    calls,
-    sessions,
-    registered,
-    complete(sessionId, report) {
-      const state = running.get(sessionId);
-      assert.ok(state, "worker must exist before completion");
-      state.isRunning = false;
-      sessions.get(sessionId).messages.push({
-        role: "assistant",
-        content: report,
-        createdAt: new Date().toISOString(),
-        status: "complete",
-      });
-    },
-    get maxPromptInFlight() {
-      return maxPromptInFlight;
-    },
-  };
-}
-
-test("spawns real workers in parallel, persists relationships, polls reports and preserves sessions", async (t) => {
-  const previousPi = globalThis.pi;
-  const harness = makeHarness();
-  globalThis.pi = harness.pi;
-  clearPluginCache();
-  let activeMain = require(join(pluginRoot, "main.js"));
-  t.after(async () => {
-    if (activeMain) await activeMain.onUnload();
-    clearPluginCache();
-    if (previousPi === undefined) delete globalThis.pi;
-    else globalThis.pi = previousPi;
-  });
-
-  await activeMain.onLoad();
-  assert.equal(harness.registered.tool.name, "SessionTask");
-  assert.equal(harness.registered.command.id, "pi.session-orchestrator.open");
-
-  const ctx = { sessionId: "parent", modelKey: "anthropic/claude", thinkingLevel: "high" };
-  const spawned = await Promise.all([
-    harness.registered.tool.execute({ action: "spawn", task: "Review Frontend", title: "Frontend Review" }, ctx),
-    harness.registered.tool.execute({ action: "spawn", task: "Review Electron", title: "Electron Review" }, ctx),
-    harness.registered.tool.execute({ action: "spawn", task: "Review Rust", title: "Rust Review" }, ctx),
-  ]);
-  const sessionIds = spawned.map((entry) => entry.sessionId);
-  assert.equal(new Set(sessionIds).size, 3);
-  assert.ok(sessionIds.every((id) => id.startsWith("worker-")));
-  assert.ok(spawned.every((entry) => !("workerId" in entry)));
-  assert.ok(harness.maxPromptInFlight >= 2, "spawned prompts must overlap");
-
-  const creates = harness.calls.filter((call) => call.operation === "session/create");
+  const creates = h.calls.filter((call) => call.operation === prefix + "spawn");
   assert.equal(creates.length, 3);
-  for (const call of creates) {
-    const input = call.args[0];
-    assert.equal(input.mode, "agent");
-    assert.equal(input.projectPath, "/repo");
-    assert.equal(input.providerId, "anthropic");
-    assert.equal(input.modelId, "claude");
-    assert.equal(input.thinkingLevel, "high");
-    assert.equal(input.inheritPermissionFromSessionId, "parent");
-    assert.equal("messages" in input, false, "parent transcript must not be copied");
-  }
-  const initialPromptIds = new Set(
-    harness.calls
-      .filter((call) => call.operation === "agent/prompt")
-      .map((call) => call.args[0].sessionId),
-  );
-  assert.deepEqual(initialPromptIds, new Set(sessionIds));
-  assert.ok(
-    harness.calls
-      .filter((call) => call.operation === "agent/prompt")
-      .every((call) => call.args[0].viewingSessionId === "parent"),
-  );
+  assert.ok(creates.every((call) => call.args[0].modelKey === "allowed/claude-sonnet-4-6"));
+  assert.ok(creates.every((call) => !('confirm' in call) && !('sourceSessionId' in call.args[0])));
+  assert.equal(h.calls.some((call) => ["session/create", "session/get", "agent/prompt"].includes(call.operation)), false);
+  assert.equal(h.settings.sessions.length, 3);
+  assert.equal(h.settings.sessions.some((entry) => "status" in entry || "report" in entry), false);
+  const callCount = h.calls.length;
+  await delay(30);
+  assert.equal(h.calls.length, callCount, "automatic notifications require no plugin polling");
+});
 
-  const sessionGetCountBeforeStatus = harness.calls.filter(
-    (call) => call.operation === "session/get",
-  ).length;
-  const activeStatus = await harness.registered.tool.execute(
-    { action: "status", sessionIds: [sessionIds[0]] },
-    ctx,
-  );
-  assert.equal(activeStatus.workers[0].sessionId, sessionIds[0]);
-  assert.equal(
-    harness.calls.filter((call) => call.operation === "session/get").length,
-    sessionGetCountBeforeStatus,
-    "status must not read a transcript while a worker is running",
-  );
+test("any existing session supports bidirectional messages without reselecting models", async (t) => {
+  const h = await loadHarness(t);
+  const first = await h.execute({ action: "send", sessionId: "existing", message: "Research", kind: "task", idempotencyKey: "retry-one" });
+  const reply = await h.execute({ action: "send", sessionId: "parent", message: "Progress", notifyOnCompletion: false }, { sessionId: "existing" });
+  assert.equal(h.messages.get(first.messageId).sourceSessionId, "parent");
+  assert.equal(h.messages.get(reply.messageId).sourceSessionId, "existing");
+  assert.equal(h.messages.get(reply.messageId).notifyOnCompletion, false);
+  assert.equal(h.sessions.get("existing").modelKey, "existing/unchanged");
+  assert.equal(h.modelReads, 0);
+  assert.equal(h.calls.at(-1).args[0].notifyOnCompletion, false);
+  await assert.rejects(h.execute({ action: "send", sessionId: "existing", message: "Change it", model: "default/general" }), rejectsCode("INVALID_ARGUMENT"));
+  await assert.rejects(h.execute({ action: "send", sessionId: "existing", message: "Forged completion", kind: "completion" }), rejectsCode("INVALID_ARGUMENT"));
+  assert.equal(h.calls.filter((entry) => entry.operation === prefix + "spawn").length, 0);
+});
 
-  for (const [index, sessionId] of sessionIds.entries()) {
-    harness.complete(sessionId, "Final report " + (index + 1));
-  }
-  const waited = await harness.registered.tool.execute({ action: "wait", sessionIds }, ctx);
-  assert.equal(waited.timedOut, false);
-  assert.deepEqual(
-    waited.workers.map((worker) => worker.report),
-    ["Final report 1", "Final report 2", "Final report 3"],
-  );
-  assert.equal("messages" in waited.workers[0], false, "wait returns reports, not transcripts");
-  const legacyStatus = await harness.registered.tool.execute(
-    { action: "status", workerIds: [sessionIds[0]] },
-    ctx,
-  );
-  assert.equal(legacyStatus.workers[0].sessionId, sessionIds[0]);
+test("model catalog changes are observed before each new spawn", async (t) => {
+  const h = await loadHarness(t);
+  const catalog = await h.execute({ action: "models" });
+  assert.equal(catalog.defaultModel, "default/general");
+  assert.equal(catalog.automaticCandidates[0].alias, "Review");
+  const first = await h.execute({ action: "spawn", task: "Inspect", model: "Review" });
+  h.models = [model("new/default", { isDefault: true })];
+  const second = await h.execute({ action: "spawn", task: "Inspect again" });
+  assert.equal(first.requestedModel, "allowed/claude-sonnet-4-6");
+  assert.equal(second.requestedModel, "new/default");
+  assert.equal(second.modelSelection, "default");
+  const before = h.calls.length;
+  await assert.rejects(h.execute({ action: "spawn", task: "Impossible", model: "missing" }), rejectsCode("MODEL_NOT_FOUND"));
+  assert.equal(h.calls.length, before);
+});
 
-  const result = await harness.registered.tool.execute({ action: "result", sessionId: sessionIds[0] }, ctx);
-  assert.equal(result.ready, true);
-  assert.equal(result.worker.report, "Final report 1");
-  assert.equal("messages" in result.worker, false);
+test("the host creation limit remains authoritative while workers can reply", async (t) => {
+  const h = await loadHarness(t);
+  const spawned = await h.execute({ action: "spawn", task: "Independent research" });
+  await assert.rejects(h.execute({ action: "spawn", task: "Nested expansion" }, { sessionId: spawned.sessionId }), rejectsCode("LIMIT_EXCEEDED"));
+  const reply = await h.execute({ action: "send", sessionId: "parent", message: "My findings" }, { sessionId: spawned.sessionId });
+  assert.equal(reply.sessionId, "parent");
+});
 
-  await harness.registered.tool.execute(
-    { action: "send", sessionId: sessionIds[0], message: "Search for one more verification detail using your existing context." },
-    ctx,
-  );
-  assert.equal(
-    harness.calls.filter((call) => call.operation === "session/create").length,
-    3,
-    "send must not create a new session",
-  );
-  assert.equal(
-    harness.calls.filter(
-      (call) => call.operation === "agent/prompt" && call.args[0].sessionId === sessionIds[0],
-    ).length,
-    2,
-    "follow-up search must reuse the same durable child session",
-  );
-  harness.complete(sessionIds[0], "Follow-up report");
-  const followUp = await harness.registered.tool.execute(
-    { action: "wait", sessionIds: [sessionIds[0]] },
-    ctx,
-  );
-  assert.equal(followUp.workers[0].report, "Follow-up report");
-  assert.equal(followUp.workers[0].round, 2);
-  assert.equal(followUp.workers[0].acceptanceStatus, "pending");
+test("status and result use host outcomes and never accept intermediate failure output", async (t) => {
+  const h = await loadHarness(t);
+  const receipt = await h.execute({ action: "send", sessionId: "existing", message: "Investigate" });
+  h.complete(receipt.messageId, "An intermediate assistant progress paragraph", "failed");
+  const status = await h.execute({ action: "status", sessionIds: ["existing"] });
+  assert.equal(status.workers[0].status, "failed");
+  assert.equal(status.workers[0].currentTask.senderSession.sessionId, "parent");
+  const result = await h.execute({ action: "result", sessionId: "existing" });
+  assert.equal(result.message.status, "failed");
+  assert.equal(result.worker.report, undefined);
+  assert.match(result.worker.error, /terminal failure/);
+  await assert.rejects(h.execute({ action: "accept", sessionId: "existing" }), rejectsCode("WORKER_NOT_READY"));
+  assert.deepEqual(h.settings.acceptances, []);
+});
 
-  const supervised = await harness.registered.tool.execute(
-    {
-      action: "supervise",
-      sessionIds,
-      message: "Address the Parent review feedback and return a revised report.",
-    },
-    ctx,
-  );
-  assert.equal(supervised.action, "supervise");
-  assert.deepEqual(
-    supervised.workers.map((worker) => worker.round),
-    [3, 2, 2],
-  );
-  assert.equal(
-    harness.calls.filter((call) => call.operation === "session/create").length,
-    3,
-    "supervision must continue existing sessions",
-  );
-  assert.ok(harness.maxPromptInFlight >= 2, "supervision prompts must overlap");
-  for (const [index, sessionId] of sessionIds.entries()) {
-    harness.complete(sessionId, "Supervised report " + (index + 1));
-  }
-  const supervisedWait = await harness.registered.tool.execute(
-    { action: "wait", sessionIds },
-    ctx,
-  );
-  assert.deepEqual(
-    supervisedWait.workers.map((worker) => worker.report),
-    ["Supervised report 1", "Supervised report 2", "Supervised report 3"],
-  );
-  const accepted = await harness.registered.tool.execute(
-    {
-      action: "accept",
-      sessionIds,
-      note: "Parent verified the final reports against the acceptance criteria.",
-    },
-    ctx,
-  );
-  assert.equal(accepted.accepted, true);
-  assert.ok(accepted.workers.every((worker) => worker.acceptanceStatus === "accepted"));
-  assert.deepEqual(
-    accepted.workers.map((worker) => worker.acceptanceRound),
-    [3, 2, 2],
-  );
+test("specific message and turn selectors keep completed results separate from new work", async (t) => {
+  const h = await loadHarness(t);
+  const first = await h.execute({ action: "send", sessionId: "existing", message: "First task" });
+  h.complete(first.messageId, "Verified first result");
+  const accepted = await h.execute({ action: "accept", sessionId: "existing", messageId: first.messageId, note: "Checked evidence" });
+  assert.equal(accepted.acceptances[0].messageId, first.messageId);
+  const second = await h.execute({ action: "send", sessionId: "existing", message: "Follow-up in the same context" });
+  assert.notEqual(second.messageId, first.messageId);
+  const firstResult = await h.execute({ action: "result", sessionId: "existing", turnId: first.turnId });
+  assert.equal(firstResult.worker.report, "Verified first result");
+  const latest = await h.execute({ action: "result", sessionId: "existing" });
+  assert.equal(latest.message.id, second.messageId);
+  assert.equal(latest.ready, false);
+  assert.equal(latest.worker.report, undefined);
+  const status = await h.execute({ action: "status", sessionId: "existing" });
+  assert.equal(status.workers[0].acceptanceStatus, "pending");
+  assert.equal(h.settings.acceptances[0].messageId, first.messageId);
+  assert.equal(h.sessions.size, 4, "follow-up must not create another session");
+});
 
-  const reopened = await harness.registered.tool.execute(
-    { action: "send", sessionId: sessionIds[0], message: "One more Parent verification request." },
-    ctx,
-  );
-  assert.equal(reopened.round, 4);
-  assert.equal(harness.settings.workers.find((worker) => worker.sessionId === sessionIds[0]).acceptanceStatus, "pending");
-  harness.complete(sessionIds[0], "Final verification report");
-  await harness.registered.tool.execute(
-    { action: "wait", sessionIds: [sessionIds[0]] },
-    ctx,
-  );
+test("a concurrent follow-up cannot redirect acceptance to the new delivery", async (t) => {
+  const h = await loadHarness(t);
+  const first = await h.execute({ action: "send", sessionId: "existing", message: "First" });
+  h.complete(first.messageId, "Final first result");
+  const observed = deferred();
+  const release = deferred();
+  h.beforeInvoke = async ({ operation }) => {
+    if (operation === prefix + "result") {
+      const message = clone(h.messages.get(first.messageId));
+      observed.resolve();
+      await release.promise;
+      return { ready: true, message };
+    }
+  };
+  const accepting = h.execute({ action: "accept", sessionId: "existing" });
+  await observed.promise;
+  const second = await h.execute({ action: "send", sessionId: "existing", message: "Second" });
+  release.resolve();
+  const accepted = await accepting;
+  assert.equal(accepted.acceptances[0].messageId, first.messageId);
+  assert.equal(h.settings.acceptances.some((entry) => entry.messageId === second.messageId), false);
+});
 
-  const cancelledSpawn = await harness.registered.tool.execute(
-    { action: "spawn", task: "Long review", title: "Long Review" },
-    ctx,
-  );
-  const cancelled = await harness.registered.tool.execute(
-    { action: "cancel", sessionId: cancelledSpawn.sessionId },
-    ctx,
-  );
+test("panel Stop and Open address the original Session ID without a relationship guard", async (t) => {
+  const h = await loadHarness(t);
+  const receipt = await h.execute({ action: "send", sessionId: "existing", message: "Long task" });
+  const cancelled = await h.main.onPanelInvoke("workers.cancel", { sessionId: "existing" });
+  assert.equal(cancelled.cancelled, true);
   assert.equal(cancelled.sessionRetained, true);
-  assert.equal(cancelled.worker.status, "cancelled");
-  assert.ok(harness.sessions.has(cancelledSpawn.sessionId));
-  assert.equal(harness.calls.some((call) => call.operation === "session/delete"), false);
-  await assert.rejects(
-    harness.registered.tool.execute(
-      { action: "accept", sessionId: cancelledSpawn.sessionId },
-      ctx,
-    ),
-    (error) => error.code === "WORKER_NOT_READY",
-  );
-
-  const otherParent = await harness.registered.tool.execute({ action: "list" }, { sessionId: "other" });
-  assert.deepEqual(otherParent.workers, []);
-  await assert.rejects(
-    harness.registered.tool.execute(
-      { action: "status", sessionIds: [sessionIds[0]] },
-      { sessionId: "other" },
-    ),
-    (error) => error.code === "NOT_FOUND",
-  );
-  await assert.rejects(
-    harness.registered.tool.execute(
-      { action: "list" },
-      { sessionId: sessionIds[0] },
-    ),
-    (error) => error.code === "PERMISSION_DENIED",
-  );
-
-  await activeMain.onPanelInvoke("workers.open", { sessionId: sessionIds[0] });
-  assert.equal(harness.calls.at(-1).operation, "session/open");
-
-  await activeMain.onUnload();
-  activeMain = null;
-  clearPluginCache();
-  const restarted = require(join(pluginRoot, "main.js"));
-  activeMain = restarted;
-  await restarted.onLoad();
-  const restored = await harness.registered.tool.execute(
-    { action: "list" },
-    { sessionId: "parent" },
-  );
-  assert.equal(restored.workers.length, 4);
-  assert.equal(restored.workers.some((worker) => worker.sessionId === sessionIds[0]), true);
-  const restoredAccepted = restored.workers.find((worker) => worker.sessionId === sessionIds[1]);
-  assert.equal(restoredAccepted?.acceptanceStatus, "accepted");
-  assert.equal(restoredAccepted?.round, 2);
-  assert.equal(
-    restoredAccepted?.acceptanceNote,
-    "Parent verified the final reports against the acceptance criteria.",
-  );
-  await restarted.onUnload();
-  activeMain = null;
+  assert.equal(h.messages.get(receipt.messageId).status, "cancelled");
+  assert.equal(h.calls.filter((entry) => entry.operation === prefix + "cancel").length, 1);
+  await h.main.onPanelInvoke("workers.open", { sessionId: "peer" });
+  assert.deepEqual(h.calls.at(-1), { operation: "session/open", args: ["peer"] });
+  assert.ok(h.sessions.has("existing"));
+  assert.equal(h.calls.some((entry) => entry.operation.includes("delete")), false);
 });
 
-test("fails closed before prompting when the host cannot preserve explicit permissions", async (t) => {
-  const previousPi = globalThis.pi;
-  const harness = makeHarness({ inheritPermission: false });
-  globalThis.pi = harness.pi;
-  clearPluginCache();
-  let activeMain = require(join(pluginRoot, "main.js"));
-  t.after(async () => {
-    if (activeMain) await activeMain.onUnload();
-    clearPluginCache();
-    if (previousPi === undefined) delete globalThis.pi;
-    else globalThis.pi = previousPi;
-  });
-
-  await activeMain.onLoad();
-  await assert.rejects(
-    harness.registered.tool.execute(
-      { action: "spawn", task: "must not start" },
-      { sessionId: "parent" },
-    ),
-    (error) => error.code === "PERMISSION_DENIED",
-  );
-  assert.equal(harness.calls.filter((call) => call.operation === "agent/prompt").length, 0);
-  assert.equal(harness.settings.workers[0].status, "failed");
-});
-
-test("wait observes AbortSignal cancellation", async (t) => {
-  const previousPi = globalThis.pi;
-  const harness = makeHarness();
-  globalThis.pi = harness.pi;
-  clearPluginCache();
-  let activeMain = require(join(pluginRoot, "main.js"));
-  t.after(async () => {
-    if (activeMain) await activeMain.onUnload();
-    clearPluginCache();
-    if (previousPi === undefined) delete globalThis.pi;
-    else globalThis.pi = previousPi;
-  });
-
-  await activeMain.onLoad();
-  const tool = harness.registered.tool;
-  const spawned = await tool.execute(
-    { action: "spawn", task: "wait forever" },
-    { sessionId: "parent" },
-  );
-  const controller = new AbortController();
-  const waiting = tool.execute(
-    { action: "wait", sessionIds: [spawned.sessionId] },
-    { sessionId: "parent", signal: controller.signal },
-  );
-  setTimeout(() => controller.abort(), 10);
-  await assert.rejects(waiting, (error) => error.code === "ABORTED");
-});
-
-test("wait has a bounded timeout and does not repeat transcript reads", async (t) => {
-  const previousPi = globalThis.pi;
-  const harness = makeHarness();
-  globalThis.pi = harness.pi;
-  clearPluginCache();
-  let activeMain = require(join(pluginRoot, "main.js"));
-  t.after(async () => {
-    if (activeMain) await activeMain.onUnload();
-    clearPluginCache();
-    if (previousPi === undefined) delete globalThis.pi;
-    else globalThis.pi = previousPi;
-  });
-
-  await activeMain.onLoad();
-  const tool = harness.registered.tool;
-  const spawned = await tool.execute(
-    { action: "spawn", task: "keep running" },
-    { sessionId: "parent" },
-  );
-  const startedAt = Date.now();
-  const waited = await tool.execute(
-    { action: "wait", sessionIds: [spawned.sessionId], timeoutMs: 15 },
-    { sessionId: "parent" },
-  );
+test("wait observes its whole deadline even when a host status read never settles", async (t) => {
+  const h = await loadHarness(t);
+  const blocked = deferred();
+  h.beforeInvoke = ({ operation }) => operation === prefix + "status" ? blocked.promise : undefined;
+  const began = performance.now();
+  const waited = await h.execute({ action: "wait", sessionIds: ["existing"], timeoutMs: 25 });
   assert.equal(waited.timedOut, true);
-  assert.ok(Date.now() - startedAt < 1_000, "short wait must return promptly");
-  assert.equal(
-    harness.calls.filter((call) => call.operation === "session/get").length,
-    1,
-    "wait must not fetch a worker transcript while it is running",
-  );
+  assert.ok(performance.now() - began < 400, "wait must not wait for the five-second read budget");
+  assert.equal(waited.workers[0].sessionId, "existing");
+  blocked.resolve({ sessionId: "existing", status: "idle", recentExchanges: [] });
 });
 
-test("migrates legacy workerSessionId settings to the real sessionId", async (t) => {
-  const previousPi = globalThis.pi;
-  const createdAt = new Date().toISOString();
-  const harness = makeHarness({
-    initialSettings: {
-      version: 1,
-      workers: [
-        {
-          parentSessionId: "parent",
-          workerSessionId: "legacy-session",
-          task: "legacy task",
-          title: "Legacy Worker",
-          status: "completed",
-          createdAt,
-          report: "legacy report",
-        },
-      ],
-    },
-  });
-  harness.sessions.set("legacy-session", {
-    id: "legacy-session",
-    projectPath: "/repo",
-    providerId: "anthropic",
-    modelId: "claude",
-    thinkingLevel: "high",
-    permissionMode: "accept-edits",
-    messages: [],
-  });
-  globalThis.pi = harness.pi;
-  clearPluginCache();
-  let activeMain = require(join(pluginRoot, "main.js"));
-  t.after(async () => {
-    if (activeMain) await activeMain.onUnload();
-    clearPluginCache();
-    if (previousPi === undefined) delete globalThis.pi;
-    else globalThis.pi = previousPi;
-  });
+test("AbortSignal cancels during host reads, including a late terminal response", async (t) => {
+  const h = await loadHarness(t);
+  const blocked = deferred();
+  const entered = deferred();
+  h.beforeInvoke = ({ operation }) => {
+    if (operation === prefix + "status") { entered.resolve(); return blocked.promise; }
+  };
+  const controller = new AbortController();
+  const waiting = h.execute({ action: "wait", sessionIds: ["existing"] }, { sessionId: "parent", signal: controller.signal });
+  await entered.promise;
+  controller.abort();
+  await assert.rejects(waiting, rejectsCode("ABORTED"));
+  blocked.resolve({ sessionId: "existing", status: "completed", recentExchanges: [] });
+});
 
-  await activeMain.onLoad();
-  const listed = await harness.registered.tool.execute(
-    { action: "list" },
-    { sessionId: "parent" },
-  );
-  assert.equal(listed.workers[0].sessionId, "legacy-session");
-  assert.equal(harness.settings.version, 2);
-  assert.equal(harness.settings.workers[0].sessionId, "legacy-session");
-  assert.equal("workerSessionId" in harness.settings.workers[0], false);
+test("explicit wait returns host reports and specific receipts without copying transcripts", async (t) => {
+  const h = await loadHarness(t);
+  const first = await h.execute({ action: "send", sessionId: "existing", message: "Review" });
+  h.complete(first.messageId, "Final verified report");
+  const waited = await h.execute({ action: "wait", sessionIds: ["existing"] });
+  assert.equal(waited.timedOut, false);
+  assert.equal(waited.workers[0].report, "Final verified report");
+  assert.equal("messages" in waited.workers[0], false);
+  await h.execute({ action: "send", sessionId: "existing", message: "New task" });
+  const exact = await h.execute({ action: "wait", sessionId: "existing", messageId: first.messageId });
+  assert.equal(exact.workers[0].messageId, first.messageId);
+  assert.equal(exact.timedOut, false);
+});
+
+test("wait pins each observed terminal delivery before a concurrent follow-up arrives", async (t) => {
+  const h = await loadHarness(t);
+  const first = await h.execute({ action: "send", sessionId: "existing", message: "First" });
+  h.complete(first.messageId, "First final result");
+  let second;
+  h.beforeInvoke = async ({ operation, args }) => {
+    if (operation === prefix + "result") {
+      assert.equal(args[0].messageId, first.messageId);
+      second = await h.execute({ action: "send", sessionId: "existing", message: "New task" });
+    }
+  };
+  const waited = await h.execute({ action: "wait", sessionIds: ["existing"] });
+  assert.equal(waited.timedOut, false);
+  assert.equal(waited.workers[0].messageId, first.messageId);
+  assert.equal(waited.workers[0].report, "First final result");
+  assert.equal(h.messages.get(second.messageId).status, "queued");
+});
+
+test("unload cancels pending reads, and late responses cannot contaminate a reloaded instance", async (t) => {
+  const h = await loadHarness(t);
+  const blocked = deferred();
+  const entered = deferred();
+  h.beforeInvoke = ({ operation }) => {
+    if (operation === prefix + "status") { entered.resolve(); return blocked.promise; }
+  };
+  const waiting = h.execute({ action: "wait", sessionIds: ["existing"] });
+  const rejected = assert.rejects(waiting, rejectsCode("ABORTED"));
+  await entered.promise;
+  await h.main.onUnload();
+  await rejected;
+  h.beforeInvoke = undefined;
+  await h.main.onLoad();
+  blocked.resolve({ sessionId: "existing", status: "completed", recentExchanges: [] });
+  await delay(5);
+  const status = await h.execute({ action: "status", sessionId: "existing" });
+  assert.equal(status.workers[0].status, "idle");
+  assert.equal(h.settings.sessions.length, 0);
+});
+
+test("older hosts fail with a capability error before any untracked creation", async (t) => {
+  const h = await loadHarness(t);
+  h.operations = [{ id: "session/create" }, { id: "agent/prompt" }];
+  await assert.rejects(h.execute({ action: "spawn", task: "Must not start" }), (error) =>
+    error.code === "UNSUPPORTED" && /Update PI-Desktop/.test(error.message));
+  await assert.rejects(h.main.onPanelInvoke("workers.list"), rejectsCode("UNSUPPORTED"));
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.modelReads, 0);
+});
+
+test("successful host receipts survive optional reference persistence failure", async (t) => {
+  const h = await loadHarness(t);
+  h.pi.plugin.setSettings = async () => { throw new Error("settings disk unavailable"); };
+  const result = await h.execute({ action: "send", sessionId: "existing", message: "Persist in the host" });
+  assert.equal(result.accepted, true);
+  assert.ok(result.messageId);
+  assert.match(result.warning, /not saved/);
+  assert.equal(h.calls.filter((entry) => entry.operation === prefix + "send").length, 1);
+  assert.equal(h.settings.sessions.length, 0);
+  // The failed optional write is still surfaced by flush; restore it with a successful later update.
+  h.pi.plugin.setSettings = async (partial) => Object.assign(h.settings, clone(partial));
+  await h.execute({ action: "result", sessionId: "existing" });
+});
+
+test("supervise preserves successful receipts when one independent delivery fails", async (t) => {
+  const h = await loadHarness(t);
+  h.beforeInvoke = ({ operation, args }) => {
+    if (operation === prefix + "send" && args[0].sessionId === "peer") {
+      throw Object.assign(new Error("permission denied by host"), { code: "PERMISSION_DENIED" });
+    }
+  };
+  const result = await h.execute({ action: "supervise", sessionIds: ["existing", "peer"], message: "Shared review feedback" });
+  assert.equal(result.accepted, false);
+  assert.equal(result.workers.length, 1);
+  assert.equal(result.workers[0].sessionId, "existing");
+  assert.ok(result.workers[0].messageId);
+  assert.equal(result.failures[0].code, "PERMISSION_DENIED");
+});
+
+test("migration preserves legacy Session IDs but ignores old execution and acceptance guesses", async (t) => {
+  const h = await loadHarness(t, { initialSettings: {
+    version: 2, workers: [{ workerSessionId: "existing", parentSessionId: "parent", title: "Old worker",
+      createdAt: new Date().toISOString(), task: "Old task", status: "completed", report: "Stale report", acceptanceStatus: "accepted" }],
+  } });
+  assert.equal(h.settings.version, 3);
+  assert.equal(h.settings.sessions[0].sessionId, "existing");
+  assert.deepEqual(h.settings.workers, []);
+  const listed = await h.execute({ action: "list" });
+  assert.equal(listed.workers[0].status, "idle");
+  assert.equal(listed.workers[0].acceptanceStatus, "pending");
+  const result = await h.execute({ action: "result", workerId: "existing" });
+  assert.equal(result.ready, false);
+  assert.equal(result.worker.report, undefined);
+  await h.main.onUnload();
+  await h.main.onLoad();
+  assert.equal((await h.execute({ action: "list" })).workers[0].sessionId, "existing");
+});
+
+test("pruning recent references never prevents addressing a known real Session ID", async (t) => {
+  const sessions = Array.from({ length: 257 }, (_, index) => ({ sessionId: index === 0 ? "existing" : `old-${index}`, title: "Old reference", referencedBy: ["parent"] }));
+  const h = await loadHarness(t, { initialSettings: { version: 3, sessions, acceptances: [] } });
+  const sent = await h.execute({ action: "send", sessionId: "existing", message: "Still addressable" }, { sessionId: "other" });
+  assert.equal(sent.sessionId, "existing");
+  assert.equal(h.settings.sessions.length, 256);
+  assert.equal(h.messages.get(sent.messageId).sourceSessionId, "other");
+});
+
+test("panel keeps usable rows when one recent session no longer exists", async (t) => {
+  const h = await loadHarness(t, { initialSettings: { version: 3, sessions: [
+    { sessionId: "existing", title: "Existing", referencedBy: ["parent"] },
+    { sessionId: "gone", title: "Gone", referencedBy: ["parent"] },
+  ] } });
+  const listed = await h.main.onPanelInvoke("workers.list");
+  assert.equal(listed.workers.find((entry) => entry.sessionId === "gone").status, "unavailable");
+  assert.equal(listed.workers.find((entry) => entry.sessionId === "existing").status, "idle");
+});
+
+test("conflicting legacy aliases, invalid inputs, and mismatched host results fail closed", async (t) => {
+  const h = await loadHarness(t);
+  await assert.rejects(h.execute({ action: "send", sessionId: "existing", workerId: "peer", message: "Conflict" }), rejectsCode("INVALID_ARGUMENT"));
+  await assert.rejects(h.execute({ action: "status", sessionIds: ["existing"], workerIds: ["peer"] }), rejectsCode("INVALID_ARGUMENT"));
+  await assert.rejects(h.execute({ action: "wait", sessionIds: [], timeoutMs: 25 }), rejectsCode("INVALID_ARGUMENT"));
+  await assert.rejects(h.execute({ action: "spawn", task: "" }), rejectsCode("INVALID_ARGUMENT"));
+  await assert.rejects(h.execute({ action: "send", sessionId: "existing", message: "Bad option", notifyOnCompletion: "yes" }), rejectsCode("INVALID_ARGUMENT"));
+  assert.equal(h.calls.length, 0);
+  h.beforeInvoke = ({ operation }) => operation === prefix + "result"
+    ? { ready: true, message: { id: "wrong", targetSessionId: "peer", status: "completed", result: "Other session" } } : undefined;
+  await assert.rejects(h.execute({ action: "result", sessionId: "existing" }), rejectsCode("INTERNAL"));
 });
