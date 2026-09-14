@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const TMP_DIRNAME = ".tmp";
+const TMP_DIRNAME = "Temp";
 const WIN = process.platform === "win32";
 const CASE_INSENSITIVE = WIN || process.platform === "darwin";
 
@@ -283,12 +283,100 @@ function isFilesystemRoot(target) {
   return compareKey(resolved) === compareKey(path.parse(resolved).root);
 }
 
+function isTempDumpName(target) {
+  return path.basename(resolvePath(target)).toLowerCase() === TMP_DIRNAME.toLowerCase();
+}
+
 function isReservedRoot(target) {
   const resolved = resolvePath(target);
-  return junkRoots().some((junk) => {
-    const info = canonicalPath(junk);
-    return info.ok && compareKey(info.path) === compareKey(resolved);
+  if (isFilesystemRoot(resolved) || isTempDumpName(resolved)) return true;
+  const exact = uniquePaths([
+    home(),
+    piHome(),
+    piAgentHome(),
+    codexHome(),
+    path.join(home(), ".codex"),
+    path.join(home(), "AppData"),
+    path.join(home(), "AppData", "Local"),
+    path.join(home(), "AppData", "Roaming"),
+    path.join(home(), "AppData", "LocalLow"),
+    process.env.LOCALAPPDATA,
+    process.env.APPDATA,
+  ]);
+  if (exact.some((item) => compareKey(item) === compareKey(resolved))) return true;
+  if (
+    junkRoots().some((junk) => {
+      const info = canonicalPath(junk);
+      return info.ok && compareKey(info.path) === compareKey(resolved);
+    })
+  ) {
+    return true;
+  }
+  const nested = uniquePaths([
+    os.tmpdir(),
+    path.join(home(), "AppData", "Local", "Temp"),
+    process.env.TEMP,
+    process.env.TMP,
+    process.env.TMPDIR,
+    process.env.SystemRoot,
+    process.env.windir,
+    process.env.ProgramFiles,
+    process.env["ProgramFiles(x86)"],
+    process.env.ProgramW6432,
+    process.env.ProgramData,
+    path.join(piHome(), "logs"),
+    path.join(piHome(), "cache"),
+    path.join(codexHome(), "visualizations"),
+    path.join(codexHome(), "tmp"),
+    path.join(codexHome(), ".tmp"),
+    path.join(home(), ".codex", "visualizations"),
+    path.join(home(), ".codex", "tmp"),
+    path.join(home(), ".codex", ".tmp"),
+    ...(WIN
+      ? []
+      : [
+          "/tmp",
+          "/var/tmp",
+          "/var/cache",
+          "/var/log",
+          "/private/tmp",
+          "/private/var/tmp",
+          "/usr",
+          "/bin",
+          "/sbin",
+          "/etc",
+          "/opt",
+          "/System",
+          "/Library",
+          "/Applications",
+        ]),
+  ]);
+  return nested.some((root) => {
+    const info = canonicalPath(root);
+    if (!info.ok) return false;
+    return compareKey(info.path) === compareKey(resolved) || isRelativeTo(resolved, info.path);
   });
+}
+
+function owningProjectFromTemp(target) {
+  let current = resolvePath(target);
+  let found = null;
+  while (true) {
+    if (isTempDumpName(current)) {
+      const parent = path.dirname(current);
+      if (parent !== current && !isFilesystemRoot(parent)) {
+        const junkHit = junkRoots().some((junk) => {
+          const info = canonicalPath(junk);
+          return info.ok && (compareKey(info.path) === compareKey(current) || isRelativeTo(current, info.path));
+        });
+        if (!junkHit && !isReservedRoot(parent)) found = parent;
+      }
+    }
+    const next = path.dirname(current);
+    if (next === current) break;
+    current = next;
+  }
+  return found;
 }
 
 function validateProjectRoot(input) {
@@ -297,14 +385,16 @@ function validateProjectRoot(input) {
     return { ok: false, error: "project root must be an absolute path" };
   }
   const resolved = resolvePath(expanded);
-  const info = canonicalPath(resolved);
+  const owner = owningProjectFromTemp(resolved);
+  const candidate = owner || resolved;
+  const info = canonicalPath(candidate);
   if (!info.ok || info.hadSymlink) {
     return { ok: false, error: "project root cannot be safely canonicalized" };
   }
   if (isFilesystemRoot(info.path) || isReservedRoot(info.path)) {
     return { ok: false, error: "project root is a reserved system or junk directory" };
   }
-  return { ok: true, projectRoot: resolved };
+  return { ok: true, projectRoot: candidate };
 }
 
 function safeScratchCandidate(input) {
@@ -383,6 +473,7 @@ function envAssignments({ projectRoot, scratch } = {}) {
     TMP: ephemeral,
     TEMP: ephemeral,
     TMPDIR: ephemeral,
+    PYTHONDONTWRITEBYTECODE: "1",
     PYTHONPYCACHEPREFIX: path.join(ephemeral, "pycache"),
     PIP_CACHE_DIR: path.join(cache, "pip"),
     UV_CACHE_DIR: path.join(cache, "uv"),
@@ -572,7 +663,9 @@ module.exports = {
   envAssignments,
   formatEnv,
   isRelativeTo,
+  isReservedRoot,
   junkRoots,
+  owningProjectFromTemp,
   resolvePath,
   resolveToolRoot,
   scratchRoot,
