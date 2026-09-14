@@ -39,6 +39,7 @@
 | **pi.log-viewer** | 大日志查看器：流式分页、实时跟随、搜索高亮、多文件页签 | Tioit-Wang |
 | **pi.bianqian** | Markdown 桌面便签：多便签、实时预览、任务列表、荧光笔与回收站 | ZY |
 | **io.github.muzimu217.session-import** | 一体化会话导入与熔炉：导入 ZCode、WorkBuddy、Claude Code、Codex、OpenCode、Pi 的会话，再蒸馏成项目约定与可复用做法 | muzimu217 |
+| **io.github.liushunqiu.pi-idea-git** | IDEA 风格 Git 工具窗口：暂存/未暂存分组、按代码块暂存与还原、提交、分支切换、图形化日志与储藏 | liushunqiu |
 
 ### 示例插件（学习参考）
 
