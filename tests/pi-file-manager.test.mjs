@@ -62,14 +62,18 @@ function makeProject() {
 test("manifest declares the exact release identity and capabilities", () => {
   assert.equal(manifest.schemaVersion, 1);
   assert.equal(manifest.id, "pi.file-manager");
-  assert.equal(manifest.version, "0.3.0");
+  assert.equal(manifest.version, "0.3.1");
   // 市场目录读的是顶层这两个字段（见 scripts/rebuild_catalog.py）
   assert.ok(manifest.safetyNotes, "top-level safetyNotes feeds the catalog");
   assert.ok(manifest.changelog, "changelog feeds the plugin detail page");
   assert.equal(manifest.main, "main.js");
   assert.match(manifest.engines.piDesktop, /^>=0\.9\.0$/);
-  // A work-panel view, not a detached panel: exactly one permission.
-  assert.deepEqual(manifest.permissions, ["ui.view"]);
+  // A work-panel view, not a detached panel. fs.read is declared only for the
+  // two host-mediated actions (open with default app / show in folder), with
+  // the same scope the bundled Files view uses.
+  assert.deepEqual([...manifest.permissions].sort(), ["fs.read", "ui.view"]);
+  assert.equal(manifest.fs.read.root, "workspace");
+  assert.deepEqual(manifest.fs.read.scope, ["**"]);
   assert.equal(manifest.ui, undefined, "declares no ui.panel entry");
   assert.deepEqual(manifest.contributes.views, [
     {
@@ -98,13 +102,21 @@ test("the view entry is a file:// safe classic script", () => {
   assert.match(viewHtml, /<script\s+src="\.\/assets\/index\.js"[^>]*><\/script>/);
 });
 
-test("only ui.view is declared, and the plugin never calls the pi.fs gateway", () => {
-  // File access deliberately bypasses the host gateway (manifest.fs cannot
-  // express a whole-tree write), so no fs permission may be claimed.
-  assert.deepEqual(manifest.permissions, ["ui.view"]);
-  assert.equal(manifest.fs, undefined, "declares no manifest.fs scope");
+test("the gateway is declared for open/reveal only, and main.js never calls it", () => {
+  // The plugin's own reading and writing goes through Node's fs in its own
+  // process (manifest.fs cannot express a whole-tree write). The fs.read scope
+  // exists for exactly two host-mediated actions, and the plugin *process*
+  // never reaches for the gateway — only the view calls fs.openDefault /
+  // fs.reveal through the bridge.
+  assert.equal(manifest.fs.write, undefined, "declares no write scope");
   assert.equal(manifest.net, undefined, "declares no egress allowlist");
   assert.doesNotMatch(mainSource, /pi\.fs\./);
+  const viewBundle = readFileSync(
+    join(here, "../plugins/pi.file-manager/views/assets/index.js"),
+    "utf8",
+  );
+  assert.match(viewBundle, /fs\.openDefault/);
+  assert.match(viewBundle, /fs\.reveal/);
 });
 
 test("path guard refuses escapes and credential paths", async (t) => {
