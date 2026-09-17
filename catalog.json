@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "providerId": "official",
   "name": "PI-Desktop Official Plugins",
-  "updatedAt": "2026-09-14T04:38:39Z",
+  "updatedAt": "2026-09-17T22:14:41Z",
   "homepage": "https://github.com/vastsa/pi-desktop-plugins",
   "plugins": [
     {
@@ -344,6 +344,90 @@
               ]
             }
           }
+        }
+      ]
+    },
+    {
+      "id": "local.pi-desktop-install-guard",
+      "name": "\u4e00\u6b21\u88c5\u5230\u4f4d",
+      "description": "\u7ed9 PI-Desktop \u5199\u63d2\u4ef6\u5e76\u88c5\u5230\u4f4d\uff1a\u5148\u5206\u6e05 Desktop \u548c PI CLI\uff0c\u518d\u6309\u5b98\u65b9\u6a21\u677f\u5199 manifest/\u6280\u80fd/\u9762\u677f\uff0c\u7136\u540e Scaffold \u2192 Check \u2192 Pack \u2192 \u63d2\u4ef6\u9875\u88c5 .piplug\u3002\u4e0d\u662f\u7ed9 Windows \u684c\u9762\u88c5\u8f6f\u4ef6\u3002",
+      "i18n": {
+        "en": {
+          "name": "PI-Desktop Install Guard",
+          "description": "Write and install PI-Desktop plugins in one pass: official templates and marketplace fields, then Scaffold \u2192 Check \u2192 Pack \u2192 install the .piplug. Distinguishes PI-Desktop from PI CLI. Not a Windows desktop-layout installer.",
+          "safetyNotes": "Instruction documents only. Does not edit the plugin registry, click Install, start MCP servers, read secrets, or touch the Windows desktop."
+        },
+        "zh-CN": {
+          "name": "\u4e00\u6b21\u88c5\u5230\u4f4d",
+          "description": "\u7ed9 PI-Desktop \u5199\u63d2\u4ef6\u5e76\u88c5\u5230\u4f4d\uff1a\u5148\u5206\u6e05 Desktop \u548c PI CLI\uff0c\u518d\u6309\u5b98\u65b9\u6a21\u677f\u5199 manifest/\u6280\u80fd/\u9762\u677f\uff0c\u7136\u540e Scaffold \u2192 Check \u2192 Pack \u2192 \u63d2\u4ef6\u9875\u88c5 .piplug\u3002\u4e0d\u662f\u7ed9 Windows \u684c\u9762\u88c5\u8f6f\u4ef6\u3002",
+          "safetyNotes": "\u53ea\u6ce8\u5165\u5b89\u88c5\u4e0e\u5199\u4f5c\u89c4\u5219\u3002\u4e0d\u6539 registry\u3001\u4e0d\u66ff\u7528\u6237\u70b9\u5b89\u88c5\u3001\u4e0d\u62c9\u8d77 MCP\u3001\u4e0d\u8bfb\u5bc6\u94a5\u3001\u4e0d\u52a8 Windows \u684c\u9762\u3002"
+        }
+      },
+      "author": "YahooYuan666",
+      "categories": [
+        "productivity"
+      ],
+      "verified": true,
+      "downloads": 0,
+      "homepage": "https://github.com/vastsa/pi-desktop-plugins/tree/main/plugins/local.pi-desktop-install-guard",
+      "repository": "https://github.com/vastsa/pi-desktop-plugins",
+      "readmeMarkdown": "# \u4e00\u6b21\u88c5\u5230\u4f4d / PI-Desktop Install Guard\n\n**\u9879\u76ee\u7528\u9014\uff1a** \u7ed9 **PI-Desktop** \u5199\u63d2\u4ef6\u3001\u88c5\u63d2\u4ef6\u3001\u8fc1\u6280\u80fd\u3001\u4fee MCP\u3002\u8ba9 Agent \u6309\u5b98\u65b9\u6a21\u677f\u5199\u597d\uff0c\u518d\u4e00\u6b21\u88c5\u5230\u6b63\u5f0f\u8def\u5f84\uff08`.piplug` \u2192 `source:installed`\uff09\uff0c\u5e76\u4e14\u4e0d\u8981\u548c **PI CLI** \u641e\u6df7\u3002\n\n**\u4e0d\u662f\uff1a** \u4e0d\u662f\u7ed9 Windows \u684c\u9762\u88c5\u5e94\u7528\u3001\u5feb\u6377\u65b9\u5f0f\u3001\u6587\u4ef6\u5939\uff0c\u4e5f\u4e0d\u662f\u8fd8\u539f\u684c\u9762\u5e03\u5c40\u3002\u672c\u5305\u4e0d\u78b0\u684c\u9762\u56fe\u6807\u3002\n\nThis is a **PI-Desktop skill pack**. It teaches the agent how to **write** Desktop plugins (official templates + marketplace fields) and how to install them in one pass, without mixing them with PI CLI packages, Codex MCP wrappers, or same-named `SKILL.md` folders.\n\nIt is **not** a Windows desktop installer and does **not** restore desktop shortcuts or layout.\n\n\u672c\u5305\u53ea\u6ce8\u5165\u89c4\u5219\u3002\u4e0d\u6539 `registry.json`\u3001\u4e0d\u66ff\u4f60\u70b9\u5b89\u88c5\u3001\u4e0d\u62c9\u8d77 MCP\u3001\u4e0d\u8bfb\u5bc6\u94a5\u3002\n\nThe plugin only injects instructions. It does not edit the registry, click Install, start MCP, or read secrets.\n\n## \u4f60\u600e\u4e48\u7528 / When to use\n\n| \u4f60\u8bf4 | \u5b83\u505a\u4ec0\u4e48 | English |\n|---|---|---|\n| \u505a\u4e2a Desktop \u63d2\u4ef6 / \u5199\u63d2\u4ef6 / \u88c5\u63d2\u4ef6 | \u5148\u6309\u5b98\u65b9\u6a21\u677f\u5199\uff0c\u518d PluginScaffold \u2192 Check \u2192 Pack \u2192 \u8bf7\u4f60\u5728\u63d2\u4ef6\u9875\u88c5 `.piplug` | Write against official templates, then scaffold, check, pack, install |\n| \u63d2\u4ef6\u9875\u8fd8\u662f 0.1.0 / \u811a\u624b\u67b6\u540d | \u4e0d\u624b\u6539\u767b\u8bb0\uff1b\u6253\u5305\u540e\u518d\u5728\u63d2\u4ef6\u9875\u88c5\u4e00\u6b21 | Do not hand-edit the registry; pack and install again |\n| MCP \u8fde\u63a5\u5931\u8d25 | \u53ea\u6539 `~/.agents/servers`\uff1bstdio \u7528\u7edd\u5bf9\u8def\u5f84\uff1bhttp \u7528 HTTPS | Edit Desktop user MCP only; absolute stdio; HTTPS for http |\n| \u628a Codex / zcode / PI CLI \u7684\u6280\u80fd\u642c\u8fc7\u6765 | \u6539\u5199\u6210\u552f\u4e00\u5165\u53e3\u6587\u4ef6\u540d\uff0c\u518d\u9489\u6210 `.piplug` | Rewrite unique skill filenames, then nail a `.piplug` |\n| \u8fd9\u662f\u7ed9 PI \u547d\u4ee4\u884c\u7528\u7684 | \u505c\uff0c\u6539\u8d70 `pi install` / `SKILL.md` | Stop; that is PI CLI, not this plugin |\n\n## \u6280\u80fd\u6587\u4ef6 / Skills\n\n\u5165\u53e3\u6587\u4ef6\u540d\u5fc5\u987b\u4e92\u4e0d\u76f8\u540c\uff0c\u5426\u5219 PI-Desktop \u4f1a\u628a\u6280\u80fd\u6298\u6210\u4e00\u4e2a\u3002\n\nSkill entry filenames must be unique or PI-Desktop folds them into one runtime id.\n\n| \u6587\u4ef6 | \u4f55\u65f6\u7528 | When |\n|---|---|---|\n| `skills/pi-desktop-install-guard.md` | \u5206\u7c7b + \u9489\u4f4f\u63d2\u4ef6 | Classify product line and nail the plugin |\n| `skills/desktop-plugin-author.md` | \u600e\u4e48\u5199\u63d2\u4ef6\uff08\u6a21\u677f\u3001manifest\u3001\u5e02\u573a\u4e0a\u67b6\uff09 | How to write a plugin |\n| `skills/desktop-mcp.md` | Desktop \u7528\u6237 MCP | Desktop user MCP only |\n| `skills/desktop-migrate.md` | \u4ece\u5176\u4ed6\u4ea7\u54c1\u7ebf\u6539\u5199 | Rewrite from zcode / Codex / PI CLI |\n\n\u4f8b\u5916\u624b\u6539\u767b\u8bb0\uff1a`references/recovery.md`\uff08\u4e0d\u5f53\u4f5c\u6280\u80fd\u5165\u53e3\uff09\u3002\n\n## \u6743\u9650 / Permissions\n\n| \u6743\u9650 | \u7528\u9014 |\n|---|---|\n| `agent.prompt.inject` | \u628a\u5b89\u88c5\u4e0e\u5199\u4f5c\u89c4\u5219\u6ce8\u5165 Agent\u3002\u4e0d\u5199\u76d8\u3001\u4e0d\u8054\u7f51\u3001\u4e0d\u6539\u684c\u9762\u3002 |\n\n## \u80fd\u529b / \u6570\u636e\u6d41\n\n| \u80fd\u529b | \u6570\u636e | \u65b9\u5411 |\n|---|---|---|\n| `agent.prompt.inject` | \u672c\u63d2\u4ef6 `skills/*.md` \u4e0e `references/recovery.md` | \u6ce8\u5165\u5f53\u524d\u4f1a\u8bdd\uff1b\u4e0d\u8bfb\u804a\u5929\u8bb0\u5f55\u3001\u4e0d\u5916\u4f20 |\n| \u6587\u4ef6\u7cfb\u7edf / \u7f51\u7edc / \u526a\u8d34\u677f / MCP / Windows \u684c\u9762 | \u65e0 | \u4e0d\u7533\u8bf7\u3001\u4e0d\u4f7f\u7528 |\n\n## \u5b89\u88c5\u672c\u63d2\u4ef6 / Install this plugin\n\n\u5f00\u53d1\uff1a\u63d2\u4ef6\u9875\u5df2\u6307\u5411\u672c\u76ee\u5f55\u65f6\uff0c\u4fdd\u5b58\u5373\u70ed\u66f4\u65b0\u3002`source:dev` \u53ea\u8868\u793a\u6b63\u5728\u505a\uff0c\u4e0d\u7b49\u4e8e\u5df2\u5b89\u88c5\u3002\n\n\u7ed9\u4ee5\u540e\u7528\uff1a\u63d2\u4ef6\u9875\u5b89\u88c5 `dist/local.pi-desktop-install-guard-1.2.0.piplug`\u3002\n\n\u4e0d\u8981\u624b\u6539 `registry.json`\u3002\u4e0d\u8981\u628a\u672c\u76ee\u5f55\u767b\u8bb0\u6210 PI CLI package\u3002\n\n## \u8bb8\u53ef / License\n\nMIT\u3002\u89c4\u5219\u6765\u81ea\u672c\u673a\u5df2\u9a8c\u8bc1\u7684 PI-Desktop \u5b89\u88c5/\u8fc1\u79fb\u7ecf\u9a8c\uff0c\u4e0d\u662f\u5b98\u65b9\u5e02\u573a\u63d2\u4ef6\u3002\n",
+      "safetyNotes": "\u53ea\u6ce8\u5165\u5b89\u88c5\u4e0e\u5199\u4f5c\u89c4\u5219\u3002\u4e0d\u6539 registry\u3001\u4e0d\u66ff\u7528\u6237\u70b9\u5b89\u88c5\u3001\u4e0d\u62c9\u8d77 MCP\u3001\u4e0d\u8bfb\u5bc6\u94a5\u3001\u4e0d\u52a8 Windows \u684c\u9762\u3002",
+      "versions": [
+        {
+          "version": "1.2.0",
+          "publishedAt": "2026-09-17T22:14:41Z",
+          "changelog": "1.2.0\uff1a\u52a0\u4e0a\u300c\u600e\u4e48\u5199 Desktop \u63d2\u4ef6\u300d\u6280\u80fd\uff0c\u5bf9\u7167\u5b98\u65b9 CONTRIBUTING \u4e0e\u4e09\u4e2a demo\u30021.1.0\uff1a\u5bf9\u5916\u8bf4\u660e\u6539\u6210\u300c\u7ed9 PI-Desktop \u88c5\u63d2\u4ef6\u300d\u30021.0.0\uff1a\u6309\u5df2\u9a8c\u8bc1\u7ecf\u9a8c\u5199\u6210\u6280\u80fd\u5305\u3002",
+          "minPiDesktop": ">=0.2.0",
+          "shasum": "d33fd978cf9c17fd58da30c234d7eea54424f7daf1bd6d4264d462c316f20a11",
+          "url": "packages/local.pi-desktop-install-guard-1.2.0.piplug",
+          "sizeBytes": 27275,
+          "permissions": [
+            "agent.prompt.inject"
+          ],
+          "fs": {}
+        }
+      ]
+    },
+    {
+      "id": "local.pi-matt-workflow",
+      "name": "PI Matt Workflow",
+      "description": "\u628a Matt Pocock \u5de5\u7a0b\u6280\u80fd\u88c5\u8fdb PI-Desktop\uff1a\u89c4\u5212\u3001\u5b9e\u73b0\u3001\u6d4b\u8bd5\u3001\u8bc4\u5ba1\u3002\u4e0d\u542b\u8bb0\u5fc6\u3001\u753b\u56fe\u6216 MCP\u3002",
+      "i18n": {
+        "en": {
+          "name": "PI Matt Workflow",
+          "description": "Matt Pocock engineering skills for PI-Desktop: plan, implement, test, review. No memory, media, or MCP is bundled.",
+          "safetyNotes": "Instruction documents only. Does not write files, start MCP, or register tools. Upstream skills are MIT from mattpocock/skills."
+        },
+        "zh-CN": {
+          "name": "PI Matt \u5de5\u4f5c\u6d41",
+          "description": "\u628a Matt Pocock \u5de5\u7a0b\u6280\u80fd\u88c5\u8fdb PI-Desktop\uff1a\u89c4\u5212\u3001\u5b9e\u73b0\u3001\u6d4b\u8bd5\u3001\u8bc4\u5ba1\u3002\u4e0d\u542b\u8bb0\u5fc6\u3001\u753b\u56fe\u6216 MCP\u3002",
+          "safetyNotes": "\u53ea\u6ce8\u5165\u6280\u80fd\u8bf4\u660e\u3002\u4e0d\u5199\u6587\u4ef6\u3001\u4e0d\u62c9\u8d77 MCP\u3001\u4e0d\u6ce8\u518c\u5de5\u5177\u3002\u4e0a\u6e38\u6280\u80fd\u6765\u81ea mattpocock/skills\uff08MIT\uff09\u3002"
+        }
+      },
+      "author": "YahooYuan666",
+      "categories": [
+        "productivity"
+      ],
+      "verified": true,
+      "downloads": 0,
+      "homepage": "https://github.com/vastsa/pi-desktop-plugins/tree/main/plugins/local.pi-matt-workflow",
+      "repository": "https://github.com/vastsa/pi-desktop-plugins",
+      "readmeMarkdown": "# PI Matt \u5de5\u4f5c\u6d41 / PI Matt Workflow\n\n**\u9879\u76ee\u7528\u9014\uff1a** \u628a [Matt Pocock Skills](https://github.com/mattpocock/skills) \u88c5\u8fdb **PI-Desktop**\uff1a\u89c4\u5212\u3001\u5b9e\u73b0\u3001\u6d4b\u8bd5\u3001\u8bc4\u5ba1\u3002\u53e6\u6709\u4e00\u6761 PI \u539f\u751f\u95e8\u95f8\uff0c\u907f\u514d\u628a\u666e\u901a\u95ee\u7b54\u5f53\u6210\u9879\u76ee\u6267\u884c\u3002\n\n**\u4e0d\u662f\uff1a** \u4e0d\u542b Basic Memory\u3001\u4e2d\u8f6c\u7ad9\u5a92\u4f53\u3001\u753b\u56fe\u98ce\u683c\u5e93\u3001MCP\u3002\u90a3\u4e9b\u8981\u5355\u72ec\u88c5\u3002\n\n**Purpose:** Matt Pocock engineering skills for **PI-Desktop** (plan, implement, test, review), plus one PI-native gate so a general question is not treated as project execution.\n\n**Not included:** Basic Memory, media generation, image styles, or MCP. Install those separately.\n\n\u672c\u5305\u53ea\u6ce8\u5165\u6280\u80fd\u3002\u4e0d\u5199\u6587\u4ef6\u3001\u4e0d\u62c9\u8d77 MCP\u3001\u4e0d\u6ce8\u518c\u5de5\u5177\u3002\n\nInstruction documents only. No file writes, MCP, or agent tools.\n\n## \u542b\u4ec0\u4e48 / Included\n\n- \u5de5\u7a0b\uff1a`ask-matt`\u3001`setup-matt-pocock-skills`\u3001`grill-with-docs`\u3001`to-spec`\u3001`to-tickets`\u3001`implement`\u3001`tdd`\u3001`code-review` \u7b49\n- \u751f\u4ea7\u529b\uff1a`grill-me`\u3001`handoff`\u3001`writing-for-agents` \u7b49\n- \u95e8\u95f8\uff1a`skills/pi-matt-workflow.md`\n\n\u6bcf\u4e2a\u4e0a\u6e38 `SKILL.md` \u5df2\u6539\u6210\u552f\u4e00\u6587\u4ef6\u540d\uff0c\u907f\u514d PI-Desktop \u628a\u6280\u80fd\u6298\u6210\u4e00\u4e2a\u3002\n\nEach upstream `SKILL.md` is renamed to a unique filename so PI-Desktop does not collapse them.\n\n\u4e0a\u6e38\u6765\u6e90\uff1a`mattpocock/skills` commit `959a8e9f1edc3adbe2f7e3054bb6fbefa6696260`\uff08MIT\uff0c\u89c1 `THIRD_PARTY_LICENSE_MATT.txt`\uff09\u3002\n\n## \u6743\u9650 / Permissions\n\n| \u6743\u9650 | \u7528\u9014 |\n|---|---|\n| `agent.prompt.inject` | \u6ce8\u5165 Matt \u6280\u80fd\u8bf4\u660e |\n\n## \u5b89\u88c5 / Install\n\n\u63d2\u4ef6\u9875\u5b89\u88c5 `.piplug`\u3002\u8303\u56f4\u7531\u4f60\u5728\u63d2\u4ef6\u9875\u9009\u62e9\uff08\u672c\u673a\u53ef\u9501\u5230\u6307\u5b9a\u9879\u76ee\uff09\u3002\n\nInstall the `.piplug` from the Plugins page. Scope is whatever you set there.\n",
+      "safetyNotes": "\u53ea\u6ce8\u5165\u6280\u80fd\u8bf4\u660e\u3002\u4e0d\u5199\u6587\u4ef6\u3001\u4e0d\u62c9\u8d77 MCP\u3001\u4e0d\u6ce8\u518c\u5de5\u5177\u3002\u4e0a\u6e38\u6280\u80fd\u6765\u81ea mattpocock/skills\uff08MIT\uff09\u3002",
+      "versions": [
+        {
+          "version": "1.1.1",
+          "publishedAt": "2026-09-17T22:14:41Z",
+          "changelog": "1.1.1\uff1a\u5165\u53e3\u6280\u80fd name \u6539\u4e3a kebab\uff08pi-matt-workflow\uff09\u30021.1.0\uff1a\u8865\u4e0a\u4e2d\u82f1\u53cc\u8bed\u5e02\u573a\u8bf4\u660e\u30021.0.2\uff1a26 \u4e2a\u552f\u4e00\u6280\u80fd\u5165\u53e3\uff0c\u65e0 SKILL.md\u3002",
+          "minPiDesktop": ">=0.2.0",
+          "shasum": "caa4a57b94e7d77c47e77bf23440728123321a277306fc2d5ece0563f92599cd",
+          "url": "packages/local.pi-matt-workflow-1.1.1.piplug",
+          "sizeBytes": 237989,
+          "permissions": [
+            "agent.prompt.inject"
+          ],
+          "fs": {}
         }
       ]
     },
