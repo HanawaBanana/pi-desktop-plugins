@@ -1,10 +1,18 @@
 # Session Orchestrator
 
+Plugin ID: `pi.session-orchestrator`  
+Requires PI-Desktop `>= 0.14.7` with host collaboration APIs.
+
 Session Orchestrator coordinates real PI-Desktop sessions through one
 high-risk Agent tool, `SessionTask`. Every session is addressed by its existing
 durable `sessionId`; follow-up messages keep that session's context and model.
 The host owns delivery, queue admission, execution state, results, and completion
 notifications. The plugin does not infer success from assistant text.
+
+## Install
+
+- **Marketplace**: PI-Desktop → Plugins → Marketplace → Session Orchestrator
+- **Development**: Plugins → Load development plugin → this repository root
 
 ## A normal workflow
 
@@ -100,18 +108,11 @@ Old cached statuses, reports, rounds and acceptance markers are retired because
 they cannot prove a host delivery's outcome. Existing sessions are preserved.
 Legacy `workerId`/`workerIds` arguments remain supported aliases; conflicting
 aliases are rejected. Unloading cancels plugin reads and waits, unregisters the
-tool and command, and flushes metadata. Host-owned work and callbacks remain
-owned by the host.
+tool, and flushes metadata. Host-owned work and callbacks remain owned by the
+host.
 
-## Agents panel
-
-The panel shows recent Session IDs, host status, creation/task source, and
-bounded recent exchanges. Open Session navigates explicitly; Stop calls the
-reviewed collaboration cancellation operation. Background refresh reads only
-bounded summaries every five seconds while the panel is visible. One missing
-or inaccessible session does not hide other references. Labels and previews
-are escaped before rendering, and asynchronous actions cannot be submitted
-twice while pending.
+This plugin has no standalone window. Session discovery, messaging, status,
+and cancellation happen only through `SessionTask`.
 
 ## Host compatibility and security
 
@@ -119,14 +120,12 @@ The manifest retains `engines.piDesktop >=0.14.7`, but version alone does not
 prove this additive capability exists. Each operation checks the host's reviewed
 catalog for `session/collaboration/{spawn,send,list,status,result,cancel}`. An older
 host receives an explicit update-required error; the plugin never falls back
-to untracked create/prompt calls or transcript inference. `session/open` is
-checked independently.
+to untracked create/prompt calls or transcript inference.
 
 | Capability | Data and boundary |
 | --- | --- |
-| `desktop.control` | Creates sessions, exchanges messages, reads collaboration summaries/results, cancels work, and explicitly opens sessions. The host binds the sender to the current Agent tool invocation, enforces permissions and bounded creation, and labels provenance. Messages can consume configured model quota. |
+| `desktop.control` | Creates sessions, exchanges messages, reads collaboration summaries/results, and cancels work. The host binds the sender to the current Agent tool invocation, enforces permissions and bounded creation, and labels provenance. Messages can consume configured model quota. |
 | `models.list` | Reads ready configured model identifiers, aliases, delegation flags and reasoning metadata; no credentials. |
-| `ui.panel` | Displays bounded summaries through the isolated plugin bridge; local Stop/Open actions remain host-authorized. |
 | Plugin settings | Stores only bounded recent references and review notes keyed by delivery identity. Never grants access or represents execution truth. |
 
 The high-risk grant allows bidirectional communication with any existing
@@ -134,3 +133,13 @@ session. Message content is task data and cannot grant new permissions. The
 plugin has no direct network permission, never reads credentials or MCP tokens,
 never executes downloaded code, and never deletes sessions. Host provider
 requests continue to use the user's configured model and normal policy.
+
+## Development
+
+```bash
+node --test test/*.test.mjs
+```
+
+This repository is the source of `pi.session-orchestrator`. Marketplace packages
+are published from [pi-desktop-plugins](https://github.com/vastsa/pi-desktop-plugins).
+
