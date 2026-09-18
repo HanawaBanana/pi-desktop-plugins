@@ -18,6 +18,8 @@
 
 ## 🎯 可用插件
 
+插件中心才是实时列表：每个插件的最新版本都在那儿，也包括作者在自己仓库发布的插件。本仓库保留 `plugins/` 下的插件源码。
+
 ### 官方插件（PI-Desktop 团队维护）
 
 | 插件 | 说明 | 作者 |
@@ -31,6 +33,8 @@
 
 ### 社区插件
 
+本仓库内的源码：
+
 | 插件 | 说明 | 作者 |
 |------|------|------|
 | **pi.scratch-calc** | 草稿计算器：多行演算、历史记录、百分比/乘方/π/e 支持，暗色模式 | Tioit-Wang |
@@ -38,9 +42,28 @@
 | **pi.markdown** | 本地 Markdown 笔记：所见即所得编辑、目录大纲、代码高亮、Mermaid / KaTeX | Tioit-Wang |
 | **pi.clipboard-history** | 剪贴板历史：运行期间捕获文本，保留 30 天，一键还原 | Tioit-Wang |
 | **pi.log-viewer** | 大日志查看器：流式分页、实时跟随、搜索高亮、多文件页签 | Tioit-Wang |
+| **pi.file-manager** | 文件管理器：目录树、代码高亮编辑、Markdown 预览、图片音视频与 CSV/JSON 查看、SQLite 只读浏览与 SQL 查询、右键文件操作、按文件名搜索 | Tioit-Wang |
 | **pi.bianqian** | Markdown 桌面便签：多便签、实时预览、任务列表、荧光笔与回收站 | ZY |
 | **io.github.muzimu217.session-import** | 一体化会话导入与熔炉：导入 ZCode、WorkBuddy、Claude Code、Codex、OpenCode、Pi 的会话，再蒸馏成项目约定与可复用做法 | muzimu217 |
+| **io.github.muzimu217.deps-audit** | 依赖漏洞扫描：唤起 osv-scanner 扫描工作区，列出 OSV 依赖漏洞，让 Agent 给出升级或修复 patch | muzimu217 |
 | **io.github.liushunqiu.pi-idea-git** | IDEA 风格 Git 工具窗口：暂存/未暂存分组、按代码块暂存与还原、提交、分支切换、图形化日志与储藏 | liushunqiu |
+| **pi.workspace-file-guard** | C盘防垃圾：防止模型把测试、日志、缓存、临时文件写到系统盘、桌面、下载，垃圾只待在当前项目的 Temp 或 scratch | xingleiwu |
+| **pi.goal-x** | 为 PI-Desktop 提供持久化工作区目标、任务证据与宿主完成审计 | Goal X contributors |
+| **pi.parchment** | 羊皮纸主题：米色纸面背景配淡网格，墨色用户气泡，纸色助手卡片，等宽字体元信息行（纯样式） | pkmcenter |
+
+插件中心上由作者自有仓库发布：
+
+| 插件 | 说明 | 作者 |
+|------|------|------|
+| **cc.mcii.session-notify** | 会话通知：监听全部会话状态变化，把标题和状态推到飞书、钉钉、企业微信、KOOK、Server酱、Telegram 或通用 Webhook；不读消息正文 | LectWolf |
+| **cc.mcii.session-usage** | 会话用量：输入 `/usage` 查看当前会话的输入、输出、缓存命中、缓存创建与命中率 | LectWolf |
+| **cn.star.computer-use** | 复刻 Codex 的操控功能，让 AI 直接操控电脑完成简单作业 | TheFalreStar |
+| **cn.star.grok-enhance** | 给 Grok 加执行纪律，并在每轮第一请求直接激活 Grep / Glob（以及已装的 memory / skill_manage） | TheFalreStar |
+| **cn.star.skill-learning** | 把做完的一件事沉淀成 SKILL，下次同类活直接复用；会话较长时在后台自行复盘 | TheFalreStar |
+| **cn.star.user-profile** | 本地记录「用户是谁」和「这台机器怎么用」，每轮注入系统提示，Agent 用 `memory` 工具写入；不接远程记忆服务 | TheFalreStar |
+| **io.github.catdford.color-picker** | 浏览 Tailwind / Material 全量色板，放大镜从图片取色，按和谐规则或让 AI 生成配色，检查 WCAG 对比度与色盲模拟，导出 CSS 变量 / Tailwind / JSON，也能装成 PI-Desktop 主题 | catdford |
+| **local.pi-markdown** | 本地 Markdown 笔记：所见即所得编辑（Typora 风格 Milkdown Crepe）、米白/黑夜双主题、5 级目录与大纲、代码高亮、Mermaid 与 KaTeX、全局搜索、导出 Markdown/HTML/图像，以及只读预览 Agent 工具 preview_file | Tioit-Wang |
+| **pi.theme.studio** | 主题工坊：内置 5 套配色，可视化调出属于自己的主题并一键应用，覆盖全部 56 个 `--ds-*` token，点预览区域即可编辑（整窗/左栏/中栏/右栏/标题栏/会话区/输入栏），带实时预览与 WCAG 对比度检查，另带 4 个 Agent 工具 | Tioit-Wang |
 
 ### 示例插件（学习参考）
 

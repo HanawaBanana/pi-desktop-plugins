@@ -24,6 +24,10 @@ plugin sources, installable `.piplug` packages, and the tools that build them.
 
 ## Available Plugins
 
+The plugin center is the live list: it serves the newest release of every plugin, including the
+ones published from their authors' own repositories. This repository keeps the sources under
+`plugins/`.
+
 ### Official (maintained by PI-Desktop team)
 
 | Plugin | Description | Author |
@@ -37,6 +41,8 @@ plugin sources, installable `.piplug` packages, and the tools that build them.
 
 ### Community
 
+Sources in this repository:
+
 | Plugin | Description | Author |
 |--------|-------------|--------|
 | **pi.scratch-calc** | Scratch calculator with multi-line history, percentage/power/π/e and dark mode | Tioit-Wang |
@@ -44,9 +50,28 @@ plugin sources, installable `.piplug` packages, and the tools that build them.
 | **pi.markdown** | Local Markdown notes with WYSIWYG editing, table of contents, code highlighting, Mermaid / KaTeX | Tioit-Wang |
 | **pi.clipboard-history** | Clipboard history capturing text during runtime, retained 30 days, one-click restore | Tioit-Wang |
 | **pi.log-viewer** | Large log viewer with streaming pagination, live tail, search highlighting and multi-file tabs | Tioit-Wang |
+| **pi.file-manager** | Project file manager in the right work panel: directory tree, syntax-highlighted editor, Markdown preview, media and CSV/JSON views, read-only SQLite browser, context-menu file operations, filename search | Tioit-Wang |
 | **pi.bianqian** | Markdown desktop sticky notes: multi-note, live preview, task lists, highlighter and trash | ZY |
 | **io.github.muzimu217.session-import** | Universal session import + forge: bring sessions in from ZCode, WorkBuddy, Claude Code, Codex, OpenCode and Pi, then distill them into project conventions and reusable practices | muzimu217 |
+| **io.github.muzimu217.deps-audit** | Dependency vulnerability audit: runs osv-scanner over the workspace, lists known OSV matches and lets the Agent propose a fix or upgrade | muzimu217 |
 | **io.github.liushunqiu.pi-idea-git** | IDEA-style Git tool window: staged/unstaged change lists, hunk-level stage & revert, commit, branch switcher, graph log and stashes | liushunqiu |
+| **pi.workspace-file-guard** | Keeps model-written test, log, cache and temp files off the system drive, Desktop and Downloads; junk stays in the project's Temp or scratch | xingleiwu |
+| **pi.goal-x** | Persistent workspace goals, task evidence and host-owned completion audits | Goal X contributors |
+| **pi.parchment** | Warm parchment global theme: cream paper background with a faint grid, ink user bubbles, paper assistant cards and monospace meta lines (styling only) | pkmcenter |
+
+Published on the plugin center from their own repositories:
+
+| Plugin | Description | Author |
+|--------|-------------|--------|
+| **cc.mcii.session-notify** | Watch every session's state changes and push titles and status to Feishu, DingTalk, WeCom, KOOK, ServerChan, Telegram or a generic webhook; message bodies are never read | LectWolf |
+| **cc.mcii.session-usage** | `/usage` command showing the current session's input, output, cache reads, cache writes and hit rate | LectWolf |
+| **cn.star.computer-use** | Codex-style computer use: let the Agent drive the desktop to finish simple tasks | TheFalreStar |
+| **cn.star.grok-enhance** | Execution discipline for Grok plus Grep / Glob (and already-installed memory / skill_manage) activation on the first request of every turn | TheFalreStar |
+| **cn.star.skill-learning** | Turns a finished task into a reusable SKILL, reviewing long sessions in the background instead of in the chat | TheFalreStar |
+| **cn.star.user-profile** | Local user and machine profile with a character cap, injected into the system prompt each turn and written through the memory tool; no remote memory service | TheFalreStar |
+| **io.github.catdford.color-picker** | Browse Tailwind / Material palettes, pick colors from an image with a pixel loupe, build schemes with harmony rules or AI, check WCAG contrast and color blindness, export CSS variables / Tailwind / JSON, or install the palette as a PI-Desktop theme | catdford |
+| **local.pi-markdown** | Local Markdown notes with true WYSIWYG editing (Typora-style Milkdown Crepe), light/dark themes, outline, code highlighting, Mermaid and KaTeX, global search, Markdown/HTML/image export and a read-only `preview_file` agent tool | Tioit-Wang |
+| **pi.theme.studio** | Theme studio: 5 built-in palettes, visual editing of all 56 `--ds-*` tokens and 7 window regions with fills, gradients, images, blur and radius, live preview, WCAG contrast checks and 4 agent tools for building themes from a prompt | Tioit-Wang |
 
 ### Demos
 
