@@ -2,18 +2,19 @@
 
 [English](./README.md)
 
-[PI-Desktop](https://github.com/vastsa/PI-Desktop) **官方插件市场仓库**，包含插件源码、可安装的 `.piplug` 包以及市场目录索引。
+[PI-Desktop](https://github.com/vastsa/PI-Desktop) 的插件源码与开发仓库：放着插件源码、可安装的 `.piplug` 包，以及构建它们的脚本。
 
-> `plugins.aiuo.net` 尚未上线。PI-Desktop 客户端从本仓库的 GitHub raw `catalog.json` 安装插件。在此之前，发布流程仍是：打包 → 重建目录 → 提交 PR / 合入 `main`。
-
+> **发布走插件中心。** [plugins.aiuo.net](https://plugins.aiuo.net) 是客户端默认的目录源，也是目前唯一受支持的发布渠道：创建插件 → 绑定插件所在仓库 → 打标签 → 提交版本。平台负责打包、审查源码、记录 SHA-256，并把 `catalog.json` + `packages/` 同步到
+> [AIUO-Net/pi-desktop-plugins](https://github.com/AIUO-Net/pi-desktop-plugins) 作为 GitHub 备用源。只往本仓库提交，不再等于发布。
 ## 📦 仓库内容
 
 | 路径 | 说明 |
 |------|------|
-| `catalog.json` | 市场目录索引，由 PI-Desktop 客户端读取，展示可安装的插件列表 |
-| `packages/*.piplug` | 打包好的插件安装包，用户安装时下载的就是这些文件 |
+| `catalog.json` | 本仓库插件的目录索引，由 `scripts/rebuild_catalog.py` 生成 |
+| `packages/*.piplug` | 打包好的插件安装包，由 `scripts/pack_plugin.py` 生成 |
 | `plugins/<id>/` | 插件源码目录，每个插件一个文件夹 |
-| `scripts/` | 开发辅助脚本（打包、重建目录等） |
+| `scripts/` | 开发辅助脚本（`pack_plugin.py`、`rebuild_catalog.py`、`security_audit.py`） |
+| `tests/`、`website/` | 插件测试与市场网站 |
 
 ## 🎯 可用插件
 
@@ -53,14 +54,17 @@
 
 1. 打开 PI-Desktop → **插件**
 2. 进入 **市场** 页面
-3. 点击 **从仓库刷新** 加载最新目录
+3. 点击 **刷新** 加载最新目录
 4. 浏览并安装插件
 
-官方 catalog 地址：
+默认源是插件中心：
 
 ```text
-https://raw.githubusercontent.com/vastsa/pi-desktop-plugins/main/catalog.json
+https://plugins.aiuo.net/catalog.json
 ```
+
+同一页面还能切换到客户端内置的备用源——GitHub 镜像
+（`raw.githubusercontent.com/AIUO-Net/pi-desktop-plugins/main/catalog.json`）和 CNB 镜像，用于插件中心不可达的网络。
 
 ## 🛠️ 开发自己的插件
 
@@ -82,13 +86,34 @@ cp -R plugins/demo.workspace-summary plugins/my.plugin-id
 # 4) 打包插件
 python3 scripts/pack_plugin.py plugins/my.plugin-id
 
-# 5) 重建市场目录
-python3 scripts/rebuild_catalog.py
-
-# 6) 在 PI-Desktop 中测试
+# 5) 在 PI-Desktop 中测试
 #    - 使用「加载开发插件」功能
 #    - 或直接安装生成的 .piplug 文件
+
+# 6) 发布前跑一遍发布门禁
+python3 scripts/security_audit.py --check-packages
 ```
+
+### 发布到插件中心
+
+开发在本仓库，发布在插件中心。两条路，同一个后端：
+
+- **控制台** — 登录 [plugins.aiuo.net](https://plugins.aiuo.net) → **我的插件** → **创建插件**：上传包、绑定插件所在的仓库、提交。后续版本在插件自己的页面提交。
+- **AI 客户端** — 装上发布 skill，让 Agent 跑完整流程：
+
+  ```text
+  https://plugins.aiuo.net/skill.md
+  ```
+
+  skill 通过 MCP 地址 `https://plugins.aiuo.net/mcp` 调用，凭证是[控制台 → 令牌](https://plugins.aiuo.net/console/publish/tokens)生成的个人访问令牌，存放在 `~/.pi-desktop/plugin-center.token`。调用时要把本地 `manifest.json` 的字段连同源码文件一起提交——`ui`、`contributes`、`activationEvents`、`fs`、`net` 一个都不能漏，漏了装出来的插件是坏的。
+
+一次发布需要三样东西：
+
+1. **打好标签的源码仓库**：推送插件并给版本打标签（如 `v0.4.8`），标签或 commit SHA 就是源码审查读取的 `sourceRef`。
+2. **已绑定的仓库**：插件通过控制台的「源码仓库」绑定到一个仓库（GitHub App 授权）。绑定是源码审查和目录 source pin 的依据，之后非管理员无法更换。
+3. **一个没发布过的版本号**，并附发布说明。平台审查源码、管理员审批后，版本带着 SHA-256 与安装量上线。
+
+`pi.`、`demo.` 是保留命名空间，发布需要管理员身份。
 
 ### 目录结构
 
@@ -148,6 +173,8 @@ plugins/<id>/
 2. 从示例模板创建你的插件
 3. 在 PI-Desktop 中充分测试
 4. 提交 Pull Request（确保 `id` 唯一、使用语义化版本号、文档清晰）
+
+Pull Request 只是把源码加进本仓库；要让用户真正装到，需要去插件中心发布——见上面的[发布到插件中心](#发布到插件中心)。
 
 详见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 

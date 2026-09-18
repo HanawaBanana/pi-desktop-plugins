@@ -1,16 +1,20 @@
 # Contributing plugins to PI-Desktop
 
-This repository is the **official plugin marketplace warehouse** for [PI-Desktop](https://github.com/vastsa/PI-Desktop).
+This repository holds the plugin sources, the tooling that builds them, and the packages and catalog
+this repository serves.
 
-PI-Desktop reads:
+Releases are published on the plugin center:
 
 ```text
-https://raw.githubusercontent.com/vastsa/pi-desktop-plugins/main/catalog.json
+https://plugins.aiuo.net
 ```
 
-and installs the `.piplug` packages referenced by that catalog.
-
-The `plugins.aiuo.net` registry is **not live yet**. Keep using pack → rebuild catalog → PR until it is.
+The center is the client's default catalog source (`https://plugins.aiuo.net/catalog.json`). It binds
+each plugin to the repository it lives in, audits the source, serves the `.piplug` packages and
+mirrors `catalog.json` + `packages/` to
+[AIUO-Net/pi-desktop-plugins](https://github.com/AIUO-Net/pi-desktop-plugins) for the GitHub backup
+channel. Adding a plugin to this repository is one way in; publishing your own repository on the
+center is the other.
 
 ## Quick start
 
@@ -30,10 +34,10 @@ cp -R plugins/demo.workspace-summary plugins/my.plugin-id
 # 4) pack
 python3 scripts/pack_plugin.py plugins/my.plugin-id
 
-# 5) rebuild catalog
-python3 scripts/rebuild_catalog.py
+# 5) run the release gates
+python3 scripts/security_audit.py --check-packages
 
-# 6) open a PR to vastsa/pi-desktop-plugins
+# 6) open a PR to vastsa/pi-desktop-plugins, or publish your own repository on the plugin center
 ```
 
 ## Plugin layout
@@ -184,12 +188,14 @@ Resolve every blocker. Manual-review signals are expected for legitimate high-ri
 
 ## After merge
 
-Once merged to `main`:
+Merging adds the plugin to this repository, its packages and its catalog — it does not by itself
+ship a release to users. Releases live on the plugin center:
 
-1. GitHub raw catalog updates
-2. In PI-Desktop open **Plugins → Marketplace**
-3. Click **Refresh from repo**
-4. Your plugin becomes installable
+1. Create the plugin (or submit a new version) on [plugins.aiuo.net](https://plugins.aiuo.net) —
+   see [Publish a Plugin](./README.md#publish-a-plugin) in the README
+2. Push the plugin's own repository and tag the version; that tag is the `sourceRef` the review reads
+3. After the audit and approval the version appears in `https://plugins.aiuo.net/catalog.json`,
+   which is what PI-Desktop's **Plugins → Marketplace** loads
 
 ## Template recommendation
 

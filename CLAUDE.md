@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository purpose
 
-Official plugin marketplace repository for PI-Desktop (a desktop environment app). The PI-Desktop client fetches `catalog.json` from GitHub raw and installs the `.piplug` packages it references. This repo is the source of truth: plugin sources in `plugins/`, packed artifacts in `packages/`, marketplace index in `catalog.json`.
+Official plugin marketplace repository for PI-Desktop (a desktop environment app). The PI-Desktop client's default catalog source is the plugin center, `https://plugins.aiuo.net/catalog.json`, with GitHub mirrors as fallbacks. This repo holds plugin sources in `plugins/`, packed artifacts in `packages/` and its own generated index `catalog.json`.
 
-`plugins.aiuo.net` is **not live yet**. Do not publish with `pi-plugin publish --registry https://plugins.aiuo.net`, and do not treat this repo as a mirror. Until that registry launches, every official release is: pack → rebuild catalog → commit `packages/` + `catalog.json`.
+`plugins.aiuo.net` is **live** and is the supported release channel: create the plugin or submit the version on the center (console, or the publish skill over `https://plugins.aiuo.net/mcp`), which audits the source, records the SHA-256 and mirrors `catalog.json` + `packages/` to `AIUO-Net/pi-desktop-plugins`. A release that stays in this repository is: pack → rebuild catalog → commit `packages/` + `catalog.json`.
 
 ## Commands
 

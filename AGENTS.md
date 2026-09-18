@@ -19,10 +19,14 @@ This repo is the source of truth:
 - `packages/` — packed `.piplug` artifacts
 - `catalog.json` — generated marketplace index (never hand-edit)
 
-`plugins.aiuo.net` is **not live yet**. Do not publish with
-`pi-plugin publish --registry https://plugins.aiuo.net`. Until that registry
-launches, every official release is: pack → rebuild catalog → commit
-`packages/` + `catalog.json`.
+`plugins.aiuo.net` is **live** and is the supported release channel: the
+PI-Desktop client's default catalog source is
+`https://plugins.aiuo.net/catalog.json`. Publish there — the console, or the
+publish skill over `https://plugins.aiuo.net/mcp` — which audits the source,
+records the SHA-256 and mirrors `catalog.json` + `packages/` to
+`AIUO-Net/pi-desktop-plugins` for the GitHub backup channel. A release that
+stays in this repository is still pack → rebuild catalog → commit `packages/`
++ `catalog.json`.
 
 ## Commands
 
