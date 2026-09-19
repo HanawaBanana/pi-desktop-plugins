@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "providerId": "official",
   "name": "PI-Desktop Official Plugins",
-  "updatedAt": "2026-09-19T06:13:28Z",
+  "updatedAt": "2026-09-19T06:13:43Z",
   "homepage": "https://github.com/vastsa/pi-desktop-plugins",
   "plugins": [
     {
@@ -423,7 +423,7 @@
           "publishedAt": "2026-09-19T06:12:54Z",
           "changelog": "1.2.0\uff1a\u52a0\u4e0a\u300c\u600e\u4e48\u5199 Desktop \u63d2\u4ef6\u300d\u6280\u80fd\uff0c\u5bf9\u7167\u5b98\u65b9 CONTRIBUTING \u4e0e\u4e09\u4e2a demo\u30021.1.0\uff1a\u5bf9\u5916\u8bf4\u660e\u6539\u6210\u300c\u7ed9 PI-Desktop \u88c5\u63d2\u4ef6\u300d\u30021.0.0\uff1a\u6309\u5df2\u9a8c\u8bc1\u7ecf\u9a8c\u5199\u6210\u6280\u80fd\u5305\u3002",
           "minPiDesktop": ">=0.2.0",
-          "shasum": "d33fd978cf9c17fd58da30c234d7eea54424f7daf1bd6d4264d462c316f20a11",
+          "shasum": "47f72829229002fbb229ef6f85e8d567ae2f4c114aecea0e5243631b2c0585e0",
           "url": "packages/local.pi-desktop-install-guard-1.2.0.piplug",
           "sizeBytes": 27275,
           "permissions": [
@@ -465,9 +465,9 @@
           "publishedAt": "2026-09-19T06:12:54Z",
           "changelog": "1.1.1\uff1a\u5165\u53e3\u6280\u80fd name \u6539\u4e3a kebab\uff08pi-matt-workflow\uff09\u30021.1.0\uff1a\u8865\u4e0a\u4e2d\u82f1\u53cc\u8bed\u5e02\u573a\u8bf4\u660e\u30021.0.2\uff1a26 \u4e2a\u552f\u4e00\u6280\u80fd\u5165\u53e3\uff0c\u65e0 SKILL.md\u3002",
           "minPiDesktop": ">=0.2.0",
-          "shasum": "caa4a57b94e7d77c47e77bf23440728123321a277306fc2d5ece0563f92599cd",
+          "shasum": "93b60c9ef568d8f509187bb2c16f960b94111af91e2da83b9597788b1520dfda",
           "url": "packages/local.pi-matt-workflow-1.1.1.piplug",
-          "sizeBytes": 237989,
+          "sizeBytes": 234620,
           "permissions": [
             "agent.prompt.inject"
           ],
