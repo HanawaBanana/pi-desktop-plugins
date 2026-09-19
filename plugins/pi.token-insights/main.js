@@ -93,7 +93,9 @@ async function scanEvents(progress) {
     scanCodexDirectory(roots.codex, progress),
     scanOpenCodeDirectory(roots.openCode, progress),
   ]);
-  const turns = readCompletedTurnUsage(host);
+  // The official pi.usage.listTurns contract when the host offers it, with the
+  // direct database read kept inside as the fallback for older hosts.
+  const turns = await readCompletedTurnUsage(host, pi);
   const piDesktop = mergePiDesktopTurnRemainder(piJsonl, turns.events);
   if (turns.diagnostics?.filesScanned) {
     piDesktop.diagnostics.filesScanned += turns.diagnostics.filesScanned;

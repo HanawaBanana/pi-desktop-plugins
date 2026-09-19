@@ -10,9 +10,11 @@
  * them here and hands the result to the panel through plugin settings.
  *
  * Everything here is strictly read-only and stays on this device:
+ *   pi.usage.listTurns (official host contract) → completed-turn usage
  *   ~/.pi-desktop/pi.sqlite            kv(ns='app', key='app') → { theme, language }
  *                                      providers(id, name)     → display names
- *                                      turns (completed usage) → subagent-inclusive remainders
+ *                                      turns (completed usage) → subagent-inclusive
+ *                                      remainders, only on hosts without the API
  *   ~/.pi-desktop/plugins/registry.json + the theme plugin's manifest + CSS
  *
  * No message text, tool arguments, session ids or project paths are touched, no
@@ -289,11 +291,134 @@ function readHostAppearance(hostRoot) {
 }
 
 /**
- * Completed-turn usage from the host database. Only token columns and ids;
- * no message text. Used to fold subagent spend that never landed on
- * transcript `message.usage` into the PI-Desktop scan.
+ * Completed-turn usage from the host. Prefers the official read-only
+ * `pi.usage.listTurns` contract (which already excludes soft-deleted sessions
+ * and carries no message text); hosts without it fall back to the direct
+ * database read below. Either way only token counts and ids leave this module.
  */
-function readCompletedTurnUsage(hostRoot) {
+async function readCompletedTurnUsage(hostRoot, pi) {
+  const listTurns = typeof pi !== "undefined" ? pi?.usage?.listTurns : undefined;
+  if (typeof listTurns === "function") {
+    try {
+      return await readCompletedTurnUsageViaApi(pi);
+    } catch (error) {
+      // An older or momentarily unhappy host must never cost the panel its
+      // PI-Desktop numbers, so the database read stays as a safety net.
+      warnApiFallbackOnce(error);
+    }
+  }
+  return readCompletedTurnUsageFromDb(hostRoot);
+}
+
+/** The largest window the contract accepts, so walks never exceed one window. */
+const API_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
+/** A window with no completed turns means everything older is done; 8 windows ≈ 8 years. */
+const API_MAX_WINDOWS = 8;
+/** The contract's page ceiling; the fewest round trips per window. */
+const API_PAGE_LIMIT = 500;
+
+let apiFallbackWarned = false;
+
+function warnApiFallbackOnce(error) {
+  if (apiFallbackWarned) return;
+  apiFallbackWarned = true;
+  try {
+    console.warn(
+      `[pi.token-insights] pi.usage.listTurns failed (${String(error?.message || error)}); reading the host database instead.`,
+    );
+  } catch {
+    /* a broken console must not break the scan */
+  }
+}
+
+/**
+ * Walks completed turns backward through the official `pi.usage.listTurns`
+ * contract: at most 365 days per window, every page of each window via the
+ * keyset cursor, and the walk stops at the first window with no rows at all.
+ * A `turnId` set dedupes across windows so a turn straddling a boundary can
+ * never be counted twice. Returns the same `{ events, diagnostics }` shape as
+ * the database reader, with `filesScanned` counting pages fetched.
+ */
+async function readCompletedTurnUsageViaApi(pi) {
+  const result = {
+    events: [],
+    diagnostics: { sourceId: "pi-desktop", filesScanned: 0, filesSkipped: 0, malformedLines: 0, usageMessages: 0 },
+  };
+  const seenTurnIds = new Set();
+  let toMs = Date.now();
+  for (let windowIndex = 0; windowIndex < API_MAX_WINDOWS; windowIndex += 1) {
+    // Inclusive endpoints, so the span stays within the contract's 365-day cap.
+    const fromMs = toMs - API_WINDOW_MS + 1;
+    let cursor = null;
+    let rowsInWindow = 0;
+    do {
+      const input = { fromMs, toMs, limit: API_PAGE_LIMIT };
+      // `cursor` is optional in the contract; a strict host may reject null.
+      if (cursor) input.cursor = cursor;
+      const page = await pi.usage.listTurns(input);
+      result.diagnostics.filesScanned += 1;
+      for (const row of page?.turns || []) {
+        rowsInWindow += 1;
+        const turnId = String(row?.turnId || "");
+        if (turnId) {
+          if (seenTurnIds.has(turnId)) continue;
+          seenTurnIds.add(turnId);
+        }
+        const event = turnEventFromApiRow(row);
+        if (!event) continue;
+        result.events.push(event);
+        result.diagnostics.usageMessages += 1;
+      }
+      cursor = page?.nextCursor || null;
+    } while (cursor);
+    if (rowsInWindow === 0) break;
+    toMs = fromMs - 1;
+  }
+  return result;
+}
+
+/**
+ * One contract row → the event shape the aggregator already consumes.
+ * The contract carries no `total`, so it is the sum of the five components;
+ * rows with no tokens at all are skipped, exactly like the database reader.
+ */
+function turnEventFromApiRow(row) {
+  const n = (value) => {
+    const parsedNumber = Number(value);
+    return Number.isFinite(parsedNumber) ? Math.max(0, parsedNumber) : 0;
+  };
+  const input = n(row?.inputTokens);
+  const output = n(row?.outputTokens);
+  const cacheRead = n(row?.cacheReadTokens);
+  const cacheWrite = n(row?.cacheWriteTokens);
+  const reasoning = n(row?.reasoningTokens);
+  if (!input && !output && !cacheRead && !cacheWrite && !reasoning) return null;
+  const timestamp = Number(row?.endedAt);
+  const sessionId = String(row?.sessionId || "").trim();
+  if (!sessionId || !Number.isFinite(timestamp)) return null;
+  return {
+    sourceId: "pi-desktop",
+    sessionId: `pi-desktop:${sessionId}`,
+    timestamp,
+    modelId: String(row.modelId || "Unknown model"),
+    providerId: String(row.providerId || "Unknown provider"),
+    tokens: {
+      input,
+      output,
+      cacheRead,
+      cacheWrite,
+      reasoning,
+      total: input + output + cacheRead + cacheWrite + reasoning,
+    },
+  };
+}
+
+/**
+ * Completed-turn usage from the host database. Only token columns and ids;
+ * no message text. Fallback for hosts without `pi.usage.listTurns` — the API
+ * path is preferred because it also excludes soft-deleted sessions.
+ */
+function readCompletedTurnUsageFromDb(hostRoot) {
   const result = {
     events: [],
     diagnostics: { sourceId: "pi-desktop", filesScanned: 0, filesSkipped: 0, malformedLines: 0, usageMessages: 0 },
@@ -362,6 +487,8 @@ function tokensFromTurnRow(row) {
 module.exports = {
   hostRootFromDataPath,
   readCompletedTurnUsage,
+  readCompletedTurnUsageFromDb,
+  readCompletedTurnUsageViaApi,
   readHostAppearance,
   readProviderLabels,
   __test: {

@@ -12,6 +12,7 @@ const plugin = require("../plugins/pi.token-insights/main.js");
 const manifest = JSON.parse(
   readFileSync(join(here, "../plugins/pi.token-insights/manifest.json"), "utf8"),
 );
+const hostReadSource = readFileSync(join(here, "../plugins/pi.token-insights/host-read.js"), "utf8");
 const panelSource = readFileSync(join(here, "../plugins/pi.token-insights/renderer/panel.js"), "utf8");
 const panelCss = readFileSync(join(here, "../plugins/pi.token-insights/renderer/panel.css"), "utf8");
 const panelPolishCss = readFileSync(
@@ -45,19 +46,34 @@ function usageRecord({ createdAt, modelId = "alpha", providerId = "local", usage
   };
 }
 
-function waitForBackgroundScan() {
-  return new Promise((resolve) => setTimeout(resolve, 10));
+/**
+ * The load scan finishes in the background, and a fixed sleep races it on slow
+ * filesystems, so poll for the terminal scanState the scan publishes instead.
+ */
+async function waitForBackgroundScan(scanStatus) {
+  const deadline = Date.now() + 5_000;
+  while (scanStatus() !== "ready" && scanStatus() !== "failed" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  const status = scanStatus();
+  if (status !== "ready" && status !== "failed") throw new Error("background scan did not settle");
 }
 
-test("manifest declares the independent scanner and minimal host permissions", () => {
-  assert.equal(manifest.version, "0.4.8");
-  assert.deepEqual(manifest.permissions, ["ui.panel", "agent.tool.register"]);
+test("manifest declares the official usage contract permission and minimal host access", () => {
+  assert.equal(manifest.version, "0.5.0");
+  assert.deepEqual(manifest.permissions, ["ui.panel", "agent.tool.register", "usage.read"]);
   assert.equal(manifest.engines.piDesktop, ">=0.2.9");
   assert.deepEqual(
     manifest.contributes.agentTools[0].schema.properties.groupBy.enum,
     ["model", "provider", "source", "day", "session"],
   );
-  assert.doesNotMatch(JSON.stringify(manifest), /usage\.read|project rankings|price table/i);
+  // The July 2025 snapshot banned usage.read because the host's old usage API
+  // had been removed. The official pi.usage.listTurns contract is back, so the
+  // manifest must declare it and the host reader must go through that contract
+  // instead of reading pi.sqlite directly.
+  assert.match(JSON.stringify(manifest), /usage\.read/);
+  assert.match(hostReadSource, /pi\.usage\.listTurns/);
+  assert.doesNotMatch(JSON.stringify(manifest), /project rankings|price table/i);
   assert.match(panelSource, /function compact\(value\)/);
   assert.match(panelSource, /sourcesTitle: "Tools"/);
   assert.match(panelSource, /sourcesTitle: "工具"/);
@@ -231,7 +247,7 @@ test("completed-turn rows fill a session-day with no transcript", () => {
   assert.equal(merged.events[0].tokens.total, 10);
 });
 
-test("readCompletedTurnUsage maps turn rows without message text", () => {
+test("readCompletedTurnUsage falls back to the host database and maps turn rows without message text", async () => {
   let sqlite;
   try {
     sqlite = require("node:sqlite");
@@ -278,7 +294,8 @@ test("readCompletedTurnUsage maps turn rows without message text", () => {
       endedAt,
     );
     db.close();
-    const result = plugin.__test.readCompletedTurnUsage(fixture.root);
+    // No `pi` argument: the wrapper must route to the database reader.
+    const result = await plugin.__test.readCompletedTurnUsage(fixture.root);
     assert.equal(result.events.length, 1);
     assert.equal(result.events[0].sessionId, "pi-desktop:sess-uuid");
     assert.deepEqual(result.events[0].tokens, {
@@ -290,6 +307,216 @@ test("readCompletedTurnUsage maps turn rows without message text", () => {
       total: 17,
     });
     assert.doesNotMatch(JSON.stringify(result), /secret|message text|tool arguments/i);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+function apiTurn({
+  turnId,
+  sessionId,
+  endedAt,
+  modelId,
+  providerId,
+  input = 0,
+  output = 0,
+  cacheRead = 0,
+  cacheWrite = 0,
+  reasoning = 0,
+}) {
+  return {
+    turnId,
+    sessionId,
+    sessionTitle: "must not leak",
+    projectId: "must-not-leak",
+    providerId,
+    modelId,
+    startedAt: endedAt - 1,
+    endedAt,
+    inputTokens: input,
+    outputTokens: output,
+    cacheReadTokens: cacheRead,
+    cacheWriteTokens: cacheWrite,
+    reasoningTokens: reasoning,
+  };
+}
+
+/** A fake host whose listTurns replays pages in call order and records inputs. */
+function createFakeUsageHost(pages) {
+  const calls = [];
+  return {
+    calls,
+    pi: {
+      usage: {
+        listTurns: async (input) => {
+          calls.push({ ...input });
+          const page = pages[calls.length - 1];
+          if (!page) throw new Error(`unexpected listTurns call #${calls.length}`);
+          return page;
+        },
+      },
+    },
+  };
+}
+
+test("readCompletedTurnUsage walks listTurns pages, dedupes, and stops at an empty window", async () => {
+  const endedAt = Date.now() - 1_000;
+  const host = createFakeUsageHost([
+    // Window 1, page 1: one normal row, one all-zero row, then a cursor.
+    {
+      turns: [
+        apiTurn({
+          turnId: "t1",
+          sessionId: "sess-1",
+          endedAt,
+          modelId: "alpha",
+          providerId: "local",
+          input: 10,
+          output: 5,
+          cacheRead: 2,
+          cacheWrite: 1,
+          reasoning: 3,
+        }),
+        apiTurn({ turnId: "t-zero", sessionId: "sess-zero", endedAt }),
+      ],
+      nextCursor: "page-2",
+    },
+    // Window 1, page 2: t1 repeats (as if straddling a boundary) and must be
+    // dropped; a row without a session id is unmappable and dropped too.
+    {
+      turns: [
+        apiTurn({
+          turnId: "t1",
+          sessionId: "sess-1",
+          endedAt,
+          modelId: "alpha",
+          providerId: "local",
+          input: 10,
+          output: 5,
+          cacheRead: 2,
+          cacheWrite: 1,
+          reasoning: 3,
+        }),
+        apiTurn({ turnId: "t2", sessionId: "sess-2", endedAt: endedAt - 5, input: 1 }),
+        apiTurn({ turnId: "t-nosess", sessionId: "", endedAt, input: 7 }),
+      ],
+      nextCursor: null,
+    },
+    // Window 2 comes back empty: the backward walk stops here.
+    { turns: [], nextCursor: null },
+  ]);
+
+  const result = await plugin.__test.readCompletedTurnUsage("/nonexistent-host", host.pi);
+  assert.equal(result.events.length, 2);
+  assert.equal(result.events[0].sourceId, "pi-desktop");
+  assert.equal(result.events[0].sessionId, "pi-desktop:sess-1");
+  assert.equal(result.events[0].timestamp, endedAt);
+  assert.equal(result.events[0].modelId, "alpha");
+  assert.equal(result.events[0].providerId, "local");
+  // The contract carries no total, so it is the sum of the five components.
+  assert.deepEqual(result.events[0].tokens, {
+    input: 10,
+    output: 5,
+    cacheRead: 2,
+    cacheWrite: 1,
+    reasoning: 3,
+    total: 21,
+  });
+  assert.equal(result.events[1].sessionId, "pi-desktop:sess-2");
+  assert.equal(result.events[1].modelId, "Unknown model");
+  assert.equal(result.events[1].providerId, "Unknown provider");
+  assert.equal(result.events[1].tokens.total, 1);
+  // Contract-only fields (session titles, project ids) never reach the events.
+  assert.doesNotMatch(JSON.stringify(result), /must not leak|must-not-leak/i);
+
+  // Pagination: 500-row pages within a contract-legal window, the cursor
+  // threaded back, the next window abutting the previous one, and no calls
+  // after the empty window.
+  const dayMs = 24 * 60 * 60 * 1000;
+  assert.equal(host.calls.length, 3);
+  for (const call of host.calls) {
+    assert.equal(call.limit, 500);
+    assert.ok(call.toMs - call.fromMs < 365 * dayMs);
+  }
+  assert.equal(host.calls[0].cursor, undefined);
+  assert.equal(host.calls[1].cursor, "page-2");
+  assert.equal(host.calls[1].fromMs, host.calls[0].fromMs);
+  assert.equal(host.calls[1].toMs, host.calls[0].toMs);
+  assert.equal(host.calls[2].toMs, host.calls[0].fromMs - 1);
+  assert.equal(host.calls[2].cursor, undefined);
+
+  assert.deepEqual(result.diagnostics, {
+    sourceId: "pi-desktop",
+    filesScanned: 3,
+    filesSkipped: 0,
+    malformedLines: 0,
+    usageMessages: 2,
+  });
+});
+
+test("the listTurns walk stops after eight windows even when every window has rows", async () => {
+  const pages = [];
+  for (let windowIndex = 0; windowIndex < 12; windowIndex += 1) {
+    pages.push({
+      turns: [
+        apiTurn({ turnId: `t-${windowIndex}`, sessionId: `sess-${windowIndex}`, endedAt: 1_000, input: 1 }),
+      ],
+      nextCursor: null,
+    });
+  }
+  const host = createFakeUsageHost(pages);
+  const result = await plugin.__test.readCompletedTurnUsage("/nonexistent-host", host.pi);
+  assert.equal(host.calls.length, 8);
+  assert.equal(result.events.length, 8);
+});
+
+test("readCompletedTurnUsage recovers through the database when the usage contract is missing or throws", async () => {
+  let sqlite;
+  try {
+    sqlite = require("node:sqlite");
+  } catch {
+    return;
+  }
+  if (!sqlite?.DatabaseSync) return;
+  const fixture = createFixture();
+  try {
+    const db = new sqlite.DatabaseSync(join(fixture.root, "pi.sqlite"));
+    db.exec(`CREATE TABLE turns (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      status TEXT,
+      provider_id TEXT,
+      model_id TEXT,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      usage_json TEXT,
+      started_at INTEGER,
+      ended_at INTEGER
+    )`);
+    const endedAt = new Date(2026, 6, 30, 12).getTime();
+    db.prepare(
+      `INSERT INTO turns (id, session_id, status, provider_id, model_id, input_tokens, output_tokens, usage_json, started_at, ended_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run("t1", "sess-fallback", "completed", "local", "alpha", 10, 5, JSON.stringify({ totalTokens: 17 }), endedAt - 1, endedAt);
+    db.close();
+
+    // A host without pi.usage at all routes straight to the database reader.
+    const withoutUsage = await plugin.__test.readCompletedTurnUsage(fixture.root, {});
+    assert.equal(withoutUsage.events.length, 1);
+    assert.equal(withoutUsage.events[0].sessionId, "pi-desktop:sess-fallback");
+    assert.equal(withoutUsage.events[0].tokens.total, 17);
+
+    // A host whose listTurns throws must never cost the panel its numbers.
+    const broken = {
+      usage: {
+        listTurns: async () => {
+          throw new Error("no contract on this host");
+        },
+      },
+    };
+    const recovered = await plugin.__test.readCompletedTurnUsage(fixture.root, broken);
+    assert.equal(recovered.events.length, 1);
+    assert.equal(recovered.events[0].sessionId, "pi-desktop:sess-fallback");
   } finally {
     fixture.cleanup();
   }
@@ -398,6 +625,7 @@ test("summary groups models, providers, sessions, time buckets, and streaks", ()
 test("on-load writes a snapshot before opening the panel and the tool groups by provider", async () => {
   const fixture = createFixture();
   const calls = { registered: [], unregistered: [], timeline: [], facts: [] };
+  let scanStatus = null;
   const previousPi = globalThis.pi;
   try {
     mkdirSync(fixture.dataPath, { recursive: true });
@@ -422,6 +650,7 @@ test("on-load writes a snapshot before opening the panel and the tool groups by 
         setSettings: async (value) => {
           calls.timeline.push("settings");
           if (value.usageFacts) calls.facts.push(value.usageFacts);
+          if (value.scanState?.status) scanStatus = value.scanState.status;
         },
       },
       commands: {
@@ -439,7 +668,7 @@ test("on-load writes a snapshot before opening the panel and the tool groups by 
     };
 
     await plugin.onLoad();
-    await waitForBackgroundScan();
+    await waitForBackgroundScan(() => scanStatus);
     const command = calls.registered.find((item) => item.type === "command").value;
     const tool = calls.registered.find((item) => item.type === "tool").value;
     calls.timeline.length = 0;
