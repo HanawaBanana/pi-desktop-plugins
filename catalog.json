@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "providerId": "official",
   "name": "PI-Desktop Official Plugins",
-  "updatedAt": "2026-09-19T06:12:54Z",
+  "updatedAt": "2026-09-19T06:13:14Z",
   "homepage": "https://github.com/vastsa/pi-desktop-plugins",
   "plugins": [
     {
@@ -344,6 +344,50 @@
               ]
             }
           }
+        }
+      ]
+    },
+    {
+      "id": "io.github.muzimu217.usage-dashboard",
+      "name": "Usage Dashboard",
+      "description": "A native PI-Desktop usage dashboard built on the official read-only usage contract (pi.usage.listTurns): 365-day activity heatmap, model-share donut, daily trend lines, top sessions and streaks, in a light and dark panel.",
+      "i18n": {
+        "en": {
+          "name": "Usage Dashboard",
+          "description": "A native PI-Desktop usage dashboard built on the official read-only usage contract (pi.usage.listTurns): 365-day activity heatmap, model-share donut, daily trend lines, top sessions and streaks, in a light and dark panel.",
+          "safetyNotes": "Read-only aggregation over the host's official usage interface (pi.usage.listTurns). Counts tokens per turn only \u2014 never reads message text, tool arguments, project paths or credentials; keeps at most an 8-character session id prefix; writes nothing outside its own plugin settings; makes no network requests. Covers PI-Desktop's native usage only and reads no other tool's files."
+        },
+        "zh-CN": {
+          "name": "\u539f\u751f\u7528\u91cf\u770b\u677f",
+          "description": "\u57fa\u4e8e PI-Desktop \u5b98\u65b9\u53ea\u8bfb\u7528\u91cf\u63a5\u53e3\uff08pi.usage.listTurns\uff09\u6784\u5efa\u7684\u539f\u751f\u7528\u91cf\u770b\u677f\uff1a365 \u5929\u6d3b\u52a8\u70ed\u529b\u56fe\u3001\u6a21\u578b\u5360\u6bd4\u73af\u5f62\u56fe\u3001\u6bcf\u65e5\u8d8b\u52bf\u6298\u7ebf\u3001Top \u4f1a\u8bdd\u4e0e\u8fde\u7eed\u4f7f\u7528\u5929\u6570\uff0c\u6df1\u6d45\u4e24\u5957\u4e3b\u9898\u3002",
+          "safetyNotes": "\u53ea\u8bfb\u805a\u5408\u5bbf\u4e3b\u5b98\u65b9\u7528\u91cf\u63a5\u53e3\uff08pi.usage.listTurns\uff09\u8fd4\u56de\u7684\u8ba1\u6570\uff1a\u4e0d\u8bfb\u53d6\u6d88\u606f\u6b63\u6587\u3001\u5de5\u5177\u53c2\u6570\u3001\u9879\u76ee\u8def\u5f84\u6216\u51ed\u636e\uff0c\u6700\u591a\u4fdd\u7559 8 \u4f4d session id \u524d\u7f00\uff0c\u9664\u81ea\u8eab\u63d2\u4ef6\u8bbe\u7f6e\u5916\u4e0d\u5199\u4efb\u4f55\u4f4d\u7f6e\uff0c\u4e0d\u53d1\u8d77\u7f51\u7edc\u8bf7\u6c42\u3002\u4ec5\u8986\u76d6 PI-Desktop \u539f\u751f\u7528\u91cf\uff0c\u4e0d\u8bfb\u53d6\u5176\u4ed6\u5de5\u5177\u7684\u4efb\u4f55\u6587\u4ef6\u3002"
+        }
+      },
+      "author": "muzimu217",
+      "categories": [
+        "productivity",
+        "developer-tools"
+      ],
+      "verified": true,
+      "downloads": 0,
+      "homepage": "https://github.com/vastsa/pi-desktop-plugins/tree/main/plugins/io.github.muzimu217.usage-dashboard",
+      "repository": "https://github.com/vastsa/pi-desktop-plugins",
+      "readmeMarkdown": "# Usage Dashboard\uff08\u539f\u751f\u7528\u91cf\u770b\u677f\uff09\n\nA native PI-Desktop usage dashboard. It is the first consumer of the host's\nofficial read-only usage contract `pi.usage.listTurns` (PI-Desktop host\nPR #503) and renders that fact stream as a local board: metric cards, a\n365-day activity heatmap, a model-share donut, per-model daily trend lines,\ntop sessions and activity streaks \u2014 in a light and a dark palette.\n\n\u539f\u751f\u7528\u91cf\u770b\u677f\uff1aPI-Desktop \u5b98\u65b9\u53ea\u8bfb\u7528\u91cf\u63a5\u53e3 `pi.usage.listTurns`\uff08\u5bbf\u4e3b PR #503\uff09\n\u7684\u9996\u4e2a\u6d88\u8d39\u8005\u3002\u628a\u5b98\u65b9\u4e8b\u5b9e\u9762\u6e32\u67d3\u6210\u672c\u5730\u770b\u677f\uff1a\u6307\u6807\u5361\u3001365 \u5929\u6d3b\u52a8\u70ed\u529b\u56fe\u3001\u6a21\u578b\u5360\u6bd4\n\u73af\u5f62\u56fe\u3001\u5206\u6a21\u578b\u6bcf\u65e5\u8d8b\u52bf\u7ebf\u3001Top \u4f1a\u8bdd\u4e0e\u8fde\u7eed\u4f7f\u7528\u5929\u6570\uff0c\u6df1\u6d45\u4e24\u5957\u4e3b\u9898\u3002\n\n## Scope and differentiation / \u5b9a\u4f4d\u4e0e\u5dee\u5f02\u5316\n\n- **Official contract only.** All data comes from `pi.usage.listTurns`. The\n  plugin never reads transcript files, the host database, or any other AI\n  tool's local data. It covers PI-Desktop's native usage only.\n  \u53ea\u7528\u6b63\u5f0f\u5951\u7ea6\uff1a\u6570\u636e\u5168\u90e8\u6765\u81ea `pi.usage.listTurns`\uff0c\u4e0d\u76f4\u8bfb\u8f6c\u5f55\u672c\u3001\u5bbf\u4e3b\u6570\u636e\u5e93\u6216\n  \u5176\u4ed6\u5de5\u5177\u7684\u672c\u5730\u6587\u4ef6\uff1b\u4ec5\u8986\u76d6 PI-Desktop \u539f\u751f\u7528\u91cf\u3002\n- Differs from `pi.token-insights`, which aggregates multiple tools and reads\n  host records directly: this plugin is a thin, permission-minimal renderer of\n  the official fact interface.\n  \u4e0e pi.token-insights\uff08\u591a\u5de5\u5177\u805a\u5408\u3001\u76f4\u8bfb\u5bbf\u4e3b\u5e93\uff09\u5dee\u5f02\u5316\uff1a\u672c\u63d2\u4ef6\u662f\u6b63\u5f0f\u4e8b\u5b9e\u63a5\u53e3\n  \u4e4b\u4e0a\u7684\u8584\u6e32\u67d3\u5c42\uff0c\u6743\u9650\u6700\u5c0f\u5316\u3002\n\n## Data channel / \u6570\u636e\u901a\u9053\n\nThe panel bridge is read-only, so the plugin process does all host access\n(the pattern `pi.token-insights` established):\n\n1. `onLoad` (and the `usageDashboard.open` command) walks the full history:\n   windows of 365 days walked backwards from now (`toMs = previous fromMs \u2212 1`),\n   each window paged by cursor until `nextCursor = null`; the first fully empty\n   window ends the walk; a `turnId` set dedupes across window seams.\n2. The deduped turns go through the pure aggregator `lib/aggregate.js`\n   (`aggregateCube(turns, nowMs)`, clock injected for testability).\n3. The cube is published via `pi.plugin.setSettings({ usageCube, scanState })`;\n   the panel polls plugin settings and renders. Range switching (7/30/90/365\n   days) is a renderer-side filter over the cube's daily rows \u2014 no second walk.\n\n## Accounting / \u805a\u5408\u53e3\u5f84\uff08v3.1\uff09\n\n- **Headline tokens = `inputTokens + outputTokens`.** Cache read, cache write\n  and reasoning tokens appear only in a diagnostics line and never enter the\n  headline. headline \u4ec5\u8ba1\u8f93\u5165 + \u8f93\u51fa\uff1b\u7f13\u5b58\u8bfb/\u5199\u4e0e\u63a8\u7406 token \u53ea\u8fdb\u8bca\u65ad\u884c\u3002\n- Cards: total tokens, turn count, session count (deduped `sessionId`),\n  peak day (max daily headline + its date), current/longest streak.\n- Daily keys are **local-calendar days** built from `endedAt`, so the heatmap\n  is not shifted by timezone conversion.\n- Streaks (v1, simple): a day is active when its headline > 0; the current\n  streak anchors on today and falls back to yesterday; any one-day gap breaks\n  a run. \u53e3\u5f84\u6700\u7b80\u5b9e\u73b0\uff0c\u89c1 `lib/aggregate.js` \u6ce8\u91ca\u3002\n- The panel recomputes everything that *can* be derived from daily rows for\n  the selected range (totals, turns, peak, model shares, trend). Session count,\n  the diagnostics line and the Top-sessions list are all-history figures and\n  labelled as such \u2014 a session spans days, so it cannot be counted from daily\n  rows without lying.\n\n## Privacy / \u9690\u79c1\n\nRead-only aggregation over the official interface. Counts only \u2014 never message\ntext, tool arguments, project paths or credentials. At most an 8-character\nsession id prefix is kept. Nothing is written outside this plugin's own\nsettings, and no network request is made. Every number stays on this device.\n\n\u53ea\u8bfb\u805a\u5408\u3001\u4ec5\u8ba1\u6570\uff1a\u4e0d\u8bfb\u53d6\u6d88\u606f\u6b63\u6587/\u5de5\u5177\u53c2\u6570/\u9879\u76ee\u8def\u5f84/\u51ed\u636e\uff0c\u6700\u591a\u4fdd\u7559 8 \u4f4d\nsession id \u524d\u7f00\uff1b\u9664\u81ea\u8eab\u63d2\u4ef6\u8bbe\u7f6e\u5916\u4e0d\u5199\u4efb\u4f55\u4f4d\u7f6e\uff0c\u4e0d\u53d1\u8d77\u7f51\u7edc\u8bf7\u6c42\u3002\n\n## Permissions / \u6743\u9650\n\n- `ui.panel` \u2014 the dashboard panel\n- `usage.read` \u2014 read aggregate token usage through the host's official interface\n\n## Panel\n\n- 7/30/90/365-day range switch (renderer-side filtering), language follows the\n  system with an EN/\u4e2d\u6587 override, theme follows `prefers-color-scheme` with a\n  light/dark override (both persisted locally).\n- Charts are hand-rolled SVG: week-column heatmap with month axis and legend,\n  donut with center total and a two-column legend, daily trend with per-model\n  toggleable lines.\n- Accessibility: `sr-only` data tables twin the heatmap and the trend chart,\n  the donut carries an aria-label summarizing the shares, and all controls are\n  focusable buttons.\n\n## Host requirement / \u5bbf\u4e3b\u8981\u6c42\n\n`pi.usage.listTurns` is provided by PI-Desktop (host PR #503). On builds\nwithout it the panel shows an explicit \"host interface not available\" state\ninstead of an empty board. \u9762\u677f\u5bf9\u672a\u63d0\u4f9b\u8be5\u63a5\u53e3\u7684\u65e7\u7248\u672c\u5bbf\u4e3b\u663e\u793a\u660e\u786e\u63d0\u793a\uff0c\n\u800c\u4e0d\u662f\u4f2a\u88c5\u6210\u201c\u6ca1\u6709\u7528\u91cf\u201d\u3002\n\n## Development\n\n```bash\nnode --check plugins/io.github.muzimu217.usage-dashboard/main.js\nnode --check plugins/io.github.muzimu217.usage-dashboard/lib/aggregate.js\nnode --test tests/usage-dashboard.test.mjs\n```\n",
+      "safetyNotes": "Read-only aggregation over the host's official usage interface (pi.usage.listTurns). Counts tokens per turn only \u2014 never reads message text, tool arguments, project paths or credentials; keeps at most an 8-character session id prefix; writes nothing outside its own plugin settings; makes no network requests. Covers PI-Desktop's native usage only and reads no other tool's files.",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishedAt": "2026-09-19T06:13:14Z",
+          "changelog": "Release 0.1.0: first release. Aggregates the full PI-Desktop usage history through the official pi.usage.listTurns contract (365-day windows walked backwards, cursor pagination, turnId dedupe) into a local dashboard: metric cards, 365-day heatmap, model donut, per-model trend lines, top sessions and streaks. Headline tokens are input + output; cache and reasoning tokens stay in a diagnostics line. 0.1.0\uff1a\u9996\u4e2a\u7248\u672c\u3002\u901a\u8fc7\u5b98\u65b9 pi.usage.listTurns \u63a5\u53e3\uff08\u6309 365 \u5929\u7a97\u53e3\u56de\u8d70 + \u6e38\u6807\u7ffb\u9875 + turnId \u53bb\u91cd\uff09\u805a\u5408\u5168\u90e8\u539f\u751f\u7528\u91cf\u5386\u53f2\uff0c\u5448\u73b0\u6307\u6807\u5361\u3001\u70ed\u529b\u56fe\u3001\u6a21\u578b\u73af\u5f62\u56fe\u3001\u5206\u6a21\u578b\u8d8b\u52bf\u7ebf\u3001Top \u4f1a\u8bdd\u4e0e\u8fde\u7eed\u5929\u6570\uff1bheadline \u4ec5\u8ba1\u8f93\u5165+\u8f93\u51fa\uff0c\u7f13\u5b58\u4e0e\u63a8\u7406 token \u5355\u5217\u8bca\u65ad\u884c\u3002",
+          "minPiDesktop": ">=0.14.3",
+          "shasum": "ac03b7748e9ae4f51a58ba55c68921ad26cd4fefe5b323a965311e8640e00941",
+          "url": "packages/io.github.muzimu217.usage-dashboard-0.1.0.piplug",
+          "sizeBytes": 89310,
+          "permissions": [
+            "ui.panel",
+            "usage.read"
+          ],
+          "fs": {}
         }
       ]
     },
