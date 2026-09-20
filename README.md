@@ -52,7 +52,7 @@ Sources in this repository:
 | **pi.log-viewer** | Large log viewer with streaming pagination, live tail, search highlighting and multi-file tabs | Tioit-Wang |
 | **pi.file-manager** | Project file manager in the right work panel: directory tree, syntax-highlighted editor, Markdown preview, media and CSV/JSON views, read-only SQLite browser, context-menu file operations, filename search | Tioit-Wang |
 | **pi.bianqian** | Markdown desktop sticky notes: multi-note, live preview, task lists, highlighter and trash | ZY |
-| **io.github.muzimu217.session-import** | Universal session import + forge: bring sessions in from ZCode, WorkBuddy, Claude Code, Codex, OpenCode and Pi, then distill them into project conventions and reusable practices | muzimu217 |
+| **io.github.muzimu217.session-import** | Moved to its own repository: [muzimu217/pi-desktop-session-import](https://github.com/muzimu217/pi-desktop-session-import), published on the [plugin center](https://plugins.aiuo.net/) | muzimu217 |
 | **io.github.muzimu217.deps-audit** | Dependency vulnerability audit: runs osv-scanner over the workspace, lists known OSV matches and lets the Agent propose a fix or upgrade | muzimu217 |
 | **io.github.liushunqiu.pi-idea-git** | IDEA-style Git tool window: staged/unstaged change lists, hunk-level stage & revert, commit, branch switcher, graph log and stashes | liushunqiu |
 | **pi.workspace-file-guard** | Keeps model-written test, log, cache and temp files off the system drive, Desktop and Downloads; junk stays in the project's Temp or scratch | xingleiwu |

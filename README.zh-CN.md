@@ -44,7 +44,7 @@
 | **pi.log-viewer** | 大日志查看器：流式分页、实时跟随、搜索高亮、多文件页签 | Tioit-Wang |
 | **pi.file-manager** | 文件管理器：目录树、代码高亮编辑、Markdown 预览、图片音视频与 CSV/JSON 查看、SQLite 只读浏览与 SQL 查询、右键文件操作、按文件名搜索 | Tioit-Wang |
 | **pi.bianqian** | Markdown 桌面便签：多便签、实时预览、任务列表、荧光笔与回收站 | ZY |
-| **io.github.muzimu217.session-import** | 一体化会话导入与熔炉：导入 ZCode、WorkBuddy、Claude Code、Codex、OpenCode、Pi 的会话，再蒸馏成项目约定与可复用做法 | muzimu217 |
+| **io.github.muzimu217.session-import** | 已迁移至独立仓库：[muzimu217/pi-desktop-session-import](https://github.com/muzimu217/pi-desktop-session-import)，发布于[插件中心](https://plugins.aiuo.net/) | 一体化会话导入与熔炉：导入 ZCode、WorkBuddy、Claude Code、Codex、OpenCode、Pi 的会话，再蒸馏成项目约定与可复用做法 | muzimu217 |
 | **io.github.muzimu217.deps-audit** | 依赖漏洞扫描：唤起 osv-scanner 扫描工作区，列出 OSV 依赖漏洞，让 Agent 给出升级或修复 patch | muzimu217 |
 | **io.github.liushunqiu.pi-idea-git** | IDEA 风格 Git 工具窗口：暂存/未暂存分组、按代码块暂存与还原、提交、分支切换、图形化日志与储藏 | liushunqiu |
 | **pi.workspace-file-guard** | C盘防垃圾：防止模型把测试、日志、缓存、临时文件写到系统盘、桌面、下载，垃圾只待在当前项目的 Temp 或 scratch | xingleiwu |
