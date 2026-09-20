@@ -50,6 +50,7 @@
 | **pi.workspace-file-guard** | C盘防垃圾：防止模型把测试、日志、缓存、临时文件写到系统盘、桌面、下载，垃圾只待在当前项目的 Temp 或 scratch | xingleiwu |
 | **pi.goal-x** | 为 PI-Desktop 提供持久化工作区目标、任务证据与宿主完成审计 | Goal X contributors |
 | **pi.parchment** | 羊皮纸主题：米色纸面背景配淡网格，墨色用户气泡，纸色助手卡片，等宽字体元信息行（纯样式） | pkmcenter |
+| **pi.obsidian-theme** | 黑曜石主题：深蓝青全局主题，按实测参考图校准——分层表面阶梯、用 1px 发丝边框而非发光建立层级、实心青绿选中态、四档文字层级（纯样式） | ily55421 |
 
 插件中心上由作者自有仓库发布：
 
