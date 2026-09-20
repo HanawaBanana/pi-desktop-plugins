@@ -58,6 +58,7 @@ Sources in this repository:
 | **pi.workspace-file-guard** | Keeps model-written test, log, cache and temp files off the system drive, Desktop and Downloads; junk stays in the project's Temp or scratch | xingleiwu |
 | **pi.goal-x** | Persistent workspace goals, task evidence and host-owned completion audits | Goal X contributors |
 | **pi.parchment** | Warm parchment global theme: cream paper background with a faint grid, ink user bubbles, paper assistant cards and monospace meta lines (styling only) | pkmcenter |
+| **pi.obsidian-theme** | Deep blue-teal global theme tuned against a measured reference: a layered surface ladder, hierarchy from 1px hairlines rather than glow, a solid teal selection fill and a four-step text scale (styling only) | ily55421 |
 
 Published on the plugin center from their own repositories:
 
