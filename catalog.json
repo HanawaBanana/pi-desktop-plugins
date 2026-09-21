@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "providerId": "official",
   "name": "PI-Desktop Official Plugins",
-  "updatedAt": "2026-09-21T10:01:00Z",
+  "updatedAt": "2026-09-21T10:11:47Z",
   "homepage": "https://github.com/vastsa/pi-desktop-plugins",
   "plugins": [
     {
@@ -435,9 +435,9 @@
           "publishedAt": "2026-09-21T10:01:00Z",
           "changelog": "Release 1.0.2",
           "minPiDesktop": ">=0.9.0",
-          "shasum": "1a293139dc2834168a0e9e59e399d377e47e2f4bbcd8fba63f6075520a556af3",
+          "shasum": "ac0d5a1036871085ef01523843a7f71a853c92fd3f1f4a84e660604f48848ec7",
           "url": "packages/pi.agents-anywhere-1.0.2.piplug",
-          "sizeBytes": 34696,
+          "sizeBytes": 44791,
           "permissions": [
             "ui.view",
             "net.fetch",
