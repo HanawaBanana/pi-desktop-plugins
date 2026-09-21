@@ -2,12 +2,13 @@
 
 本插件基于开源跨设备 Agent 工作台 **[Agents Anywhere](https://www.agents-anywhere.com/)**（[GitHub 仓库](https://github.com/anywhere-labs/Agents-Anywhere)），为 **Pi-Desktop** 提供手机端（iOS / Android / Web）远程查看、实时会话控制与交互审批能力。
 
-无论你是在通勤路上、会议室还是外出，只需在手机端打开 Agents Anywhere，即可随时随地查看 PC 上的 Agent 任务进度、发问交互与进行敏感工具审批。
+无论是在通勤路上、会议室还是外出，只需在手机端打开 Agents Anywhere，即可随时随地查看 PC 上的 Agent 任务进度、发问交互与进行敏感工具审批。
 
 ---
 
 ## 一、核心特性
 
+- **手机端命令一键导入（完美匹配手机端【使用命令行连接】）**：直接粘贴手机 App 生成的 `uvx anywhere-cli start ...` 整行命令，插件全自动秒级识别服务器地址、Connector ID 与 Token，彻底免去手动繁琐拆分。
 - **跨设备反向隧道（无需公网 IP）**：基于加密 WebSocket 长连接（WSS），PC 桌面端主动向 Agents Anywhere 中继服务发起连接，实现毫秒级双向穿透，无需配置动态域名、端口映射或公网 IP。
 - **双向会话流同步**：手机端与 PC 桌面端实时双向同步会话历史、运行中状态、模型输出与错误中断。
 - **思考流式展开与折叠（对齐 ChatGPT 体验）**：在手机端完整实时呈现大模型深层思维链（Chain of Thought），思考时流式展开，正式回答吐出后平滑收拢为单行摘要。
@@ -39,6 +40,7 @@
 |                                                                               |
 |  +-------------------------------------------------------------------------+  |
 |  | [插件] pi.agents-anywhere (运行于 Pi 插件沙箱进程)                       |  |
+|  | • 智能命令解析器: 自动识别手机端复制的完整 CLI 命令                      |  |
 |  | • AnywhereClient: 鉴权握手、心跳保活、自动重连 (指数退避)               |  |
 |  | • DesktopBridge: 协议转译 (Agents Anywhere RPC <-> pi.desktop.invoke)   |  |
 |  | • panel.html: 嵌入在右侧工作区原生的管理面板                            |  |
@@ -68,9 +70,23 @@ pi.agents-anywhere/
 
 ---
 
-## 四、安装与使用全流程指南
+## 四、极速连接指南（匹配手机端操作）
 
-### 1. 安装插件
+### 第一步：在手机端获取连接命令
+1. 打开手机端 **Agents Anywhere**，点击「设备」$\rightarrow$ 点击「添加设备」；
+2. 在弹出的 **「连接您的设备」** 界面中，选择 **「使用命令行连接」**；
+3. 点击 **「复制代码」**（生成的内容格式如：`uvx anywhere-cli start --server-url https://... --connector-id conn_xxx --connector-token cxt_xxx`）。
+
+### 第二步：在 Pi-Desktop 中一键粘贴
+1. 在 Pi-Desktop 右侧工作面板打开 **「远程助手」**；
+2. 停留在默认的 **「⚡ 手机命令一键导入」** 选项卡；
+3. 把在手机上复制的整行命令**直接粘贴**到输入框中；
+4. 点击 **「🚀 一键识别并建立连接」**！
+5. 插件将自动秒级解析参数并建立加密 WebSocket 隧道，状态徽标立刻变为绿色 **「在线 (已连接)」**。
+
+---
+
+## 五、安装方式
 
 #### 方式 A：插件中心市场一键安装（推荐，全网用户）
 1. 打开 Pi-Desktop 桌面端，点击左下角 **「设置」** $\rightarrow$ **「插件 (Plugins)」** $\rightarrow$ **「插件市场」**；
@@ -78,67 +94,25 @@ pi.agents-anywhere/
 3. 点击 **「安装」**，在弹出的权限请求卡片中点击 **「允许并启用」**。
 
 #### 方式 B：从本地 `.piplug` 文件离线安装
-1. 下载预编译打包好的 `pi.agents-anywhere-1.0.0.piplug`；
+1. 下载预编译打包好的 `pi.agents-anywhere-1.0.3.piplug`；
 2. 在 Pi-Desktop 的插件设置页面选择 **「从文件安装插件 (Install from file)」**；
 3. 选择该文件即可完成秒级安装并启用。
 
-#### 方式 C：开发者模式加载源码
-1. 进入 Pi-Desktop 的「设置 $\rightarrow$ 插件 $\rightarrow$ 开发中插件」；
-2. 点击「加载未打包插件」，选择本仓库的 `plugins/pi.agents-anywhere` 目录。
-
 ---
 
-### 2. 手机端生成连接凭据
-1. 在手机上安装 **Agents Anywhere**：
-   - **iOS / iPadOS**：通过 [TestFlight 邀请链接](https://testflight.apple.com/join/GKGaut99) 安装；
-   - **Android**：下载 [APK 安装包](https://www.agents-anywhere.com/download)；
-   - **移动端浏览器 / 电脑端浏览器**：直接访问 [web.agents-anywhere.com](https://web.agents-anywhere.com)。
-2. 注册并登录您的账号；
-3. 点击底部导航栏的 **「设备 (Devices)」** $\rightarrow$ **「添加设备 (Add Connector)」**；
-4. 复制生成的专属凭证信息：
-   - `Connector ID`（格式如：`conn_xxxxxxxxxxxx`）
-   - `Connector Token`（密钥，格式如：`cxt_xxxxxxxxxxxx`）
+## 六、常见问题排查（FAQ）
 
----
+#### Q1：点击一键识别并连接提示“未能识别到 Connector ID”？
+- 请确保在手机端复制的是「使用命令行连接」中的完整单行命令（包含 `--connector-id` 和 `--connector-token`）。
 
-### 3. 桌面端一键配对绑定
-1. 在 Pi-Desktop 中，点击右侧工作区面板中的 **「远程助手」** 标签（带有 🔗 图标）；
-2. 在面板配置栏中填入：
-   - **服务端地址**：保持默认 `https://api.agents-anywhere.com`（若为私有化部署则填写个人域名）；
-   - **Connector ID**：粘贴手机端生成的 ID；
-   - **Connector Token**：粘贴手机端生成的密钥；
-   - **设备识别名**：可自定义输入易辨认的名称，例如 `办公室台式机` 或 `MacBook Pro`。
-3. 点击 **「保存并立即连接」**；
-4. 面板顶部的状态指示灯将在 1~2 秒内转变为绿色 **「在线 (已连接)」**，日志窗口提示 `已成功向云端注册 Pi Desktop 运行时`。
-
----
-
-### 4. 开始手机端远程操作
-1. 打开手机上的 Agents Anywhere，在设备列表中点击刚刚绑定的桌面设备；
-2. 手机端将即时拉取当前电脑上的全部会话与工作区；
-3. **日常交互操作**：
-   - **发送 Prompt**：在手机上输入任务需求（如“分析当前工程中的性能瓶颈并给出优化方案”），点击发送；
-   - **查看思考过程**：手机端将实时同步渲染模型的思考过程（Thinking 链），回答开始生成后自动收折为摘要；
-   - **远程审批**：当 Agent 尝试执行代码或修改文件时，手机端会弹出审批确认卡片，点击「允许」即可驱动桌面端继续执行。
-
----
-
-## 五、常见问题排查（FAQ）
-
-#### Q1：保存后状态一直显示“离线”或提示连接失败？
-- **检查网络环境**：请确保 PC 能正常访问公网。如果使用了 Clash / Mihomo / 系统代理，建议将 `aiuo.net` 和 `agents-anywhere.com` 加入直连白名单。
-- **核对凭据**：请确认复制的 `Connector ID` 和 `Token` 没有多余的空格。
-
-#### Q2：手机端发送消息后桌面端没有响应？
-- 检查桌面端 Pi-Desktop 是否处于打开状态（插件依赖 PC 端运行时执行任务）；
-- 检查 Pi-Desktop 右侧的「远程助手」日志窗口，确认是否有收到 `session.send_message` 的 RPC 请求日志。
+#### Q2：状态显示离线或提示网络连接超时？
+- 请检查 PC 端是否有开启系统全局代理。如果开启了代理客户端（如 Clash/Mihomo），确保已将 `agents-anywhere.com` 加入直连白名单。
 
 #### Q3：私有化部署的 Agents Anywhere 服务端支持吗？
-- 完全支持。在桌面端面板将「服务端地址」改为你的私有服务域名（支持自建 Docker），手机端切换到对应服务器即可。
+- 完全支持。手机端生成的命令中如果带有私有化域名的 `--server-url`，插件会自动识别并直连你的私有服务器。
 
 ---
 
-## 六、开源协议与贡献
+## 七、开源协议
 
-- 遵循 **MIT License** 开源协议；
-- 欢迎提交 Issue 与 Pull Request 共同完善跨设备 Agent 生态！
+- 遵循 **MIT License** 开源协议。
