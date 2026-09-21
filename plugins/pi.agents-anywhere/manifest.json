@@ -2,17 +2,17 @@
   "schemaVersion": 1,
   "id": "pi.agents-anywhere",
   "name": "Agents Anywhere 远程助手",
-  "version": "1.0.1",
-  "description": "基于 Agents Anywhere 平台实现手机端对 Pi Desktop 的远程查看、发问与控制。",
+  "version": "1.0.2",
+  "description": "基于 Agents Anywhere 平台实现手机端对 Pi Desktop 的远程查看、发问与控制，支持扫码一键连接。",
   "i18n": {
     "en": {
       "name": "Agents Anywhere Remote",
-      "description": "Remote control and sync for Pi Desktop from mobile via Agents Anywhere.",
+      "description": "Remote control and sync for Pi Desktop from mobile via Agents Anywhere. Supports QR code scan to connect.",
       "safetyNotes": "Connector credentials stay on this local machine. Network communication connects strictly to the official/configured Agents Anywhere relay servers over encrypted WSS/HTTPS. Remote actions reuse local session permissions and never bypass host boundaries."
     },
     "zh-CN": {
       "name": "Agents Anywhere 远程助手",
-      "description": "基于 Agents Anywhere 平台实现手机端对 Pi Desktop 的远程查看、发问与控制。",
+      "description": "基于 Agents Anywhere 平台实现手机端对 Pi Desktop 的远程查看、发问与控制，支持扫码一键连接。",
       "safetyNotes": "连接凭据仅保存在本机；网络通信严格限制在官方或用户配置的 Agents Anywhere 中继服务器（通过加密 WSS/HTTPS 传输）；远程执行的指令完全复用本地会话权限体系，绝不绕过安全沙箱。"
     }
   },

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "providerId": "official",
   "name": "PI-Desktop Official Plugins",
-  "updatedAt": "2026-09-21T05:39:38Z",
+  "updatedAt": "2026-09-21T10:01:00Z",
   "homepage": "https://github.com/vastsa/pi-desktop-plugins",
   "plugins": [
     {
@@ -406,16 +406,16 @@
     {
       "id": "pi.agents-anywhere",
       "name": "Agents Anywhere \u8fdc\u7a0b\u52a9\u624b",
-      "description": "\u57fa\u4e8e Agents Anywhere \u5e73\u53f0\u5b9e\u73b0\u624b\u673a\u7aef\u5bf9 Pi Desktop \u7684\u8fdc\u7a0b\u67e5\u770b\u3001\u53d1\u95ee\u4e0e\u63a7\u5236\u3002",
+      "description": "\u57fa\u4e8e Agents Anywhere \u5e73\u53f0\u5b9e\u73b0\u624b\u673a\u7aef\u5bf9 Pi Desktop \u7684\u8fdc\u7a0b\u67e5\u770b\u3001\u53d1\u95ee\u4e0e\u63a7\u5236\uff0c\u652f\u6301\u626b\u7801\u4e00\u952e\u8fde\u63a5\u3002",
       "i18n": {
         "en": {
           "name": "Agents Anywhere Remote",
-          "description": "Remote control and sync for Pi Desktop from mobile via Agents Anywhere.",
+          "description": "Remote control and sync for Pi Desktop from mobile via Agents Anywhere. Supports QR code scan to connect.",
           "safetyNotes": "Connector credentials stay on this local machine. Network communication connects strictly to the official/configured Agents Anywhere relay servers over encrypted WSS/HTTPS. Remote actions reuse local session permissions and never bypass host boundaries."
         },
         "zh-CN": {
           "name": "Agents Anywhere \u8fdc\u7a0b\u52a9\u624b",
-          "description": "\u57fa\u4e8e Agents Anywhere \u5e73\u53f0\u5b9e\u73b0\u624b\u673a\u7aef\u5bf9 Pi Desktop \u7684\u8fdc\u7a0b\u67e5\u770b\u3001\u53d1\u95ee\u4e0e\u63a7\u5236\u3002",
+          "description": "\u57fa\u4e8e Agents Anywhere \u5e73\u53f0\u5b9e\u73b0\u624b\u673a\u7aef\u5bf9 Pi Desktop \u7684\u8fdc\u7a0b\u67e5\u770b\u3001\u53d1\u95ee\u4e0e\u63a7\u5236\uff0c\u652f\u6301\u626b\u7801\u4e00\u952e\u8fde\u63a5\u3002",
           "safetyNotes": "\u8fde\u63a5\u51ed\u636e\u4ec5\u4fdd\u5b58\u5728\u672c\u673a\uff1b\u7f51\u7edc\u901a\u4fe1\u4e25\u683c\u9650\u5236\u5728\u5b98\u65b9\u6216\u7528\u6237\u914d\u7f6e\u7684 Agents Anywhere \u4e2d\u7ee7\u670d\u52a1\u5668\uff08\u901a\u8fc7\u52a0\u5bc6 WSS/HTTPS \u4f20\u8f93\uff09\uff1b\u8fdc\u7a0b\u6267\u884c\u7684\u6307\u4ee4\u5b8c\u5168\u590d\u7528\u672c\u5730\u4f1a\u8bdd\u6743\u9650\u4f53\u7cfb\uff0c\u7edd\u4e0d\u7ed5\u8fc7\u5b89\u5168\u6c99\u7bb1\u3002"
         }
       },
@@ -431,13 +431,13 @@
       "safetyNotes": "\u8fde\u63a5\u51ed\u636e\u4ec5\u4fdd\u5b58\u5728\u672c\u673a\uff1b\u7f51\u7edc\u901a\u4fe1\u4e25\u683c\u9650\u5236\u5728\u5b98\u65b9\u6216\u7528\u6237\u914d\u7f6e\u7684 Agents Anywhere \u4e2d\u7ee7\u670d\u52a1\u5668\uff1b\u8fdc\u7a0b\u6267\u884c\u6307\u4ee4\u5b8c\u5168\u9075\u5faa\u672c\u5730\u6743\u9650\u5ba1\u6279\u7b56\u7565\u3002",
       "versions": [
         {
-          "version": "1.0.1",
-          "publishedAt": "2026-09-21T05:39:38Z",
-          "changelog": "Release 1.0.1",
+          "version": "1.0.2",
+          "publishedAt": "2026-09-21T10:01:00Z",
+          "changelog": "Release 1.0.2",
           "minPiDesktop": ">=0.9.0",
-          "shasum": "5d7dc583c123146e7db56ec1ddcf0f9b25756af1111e19f7dc0a04f76d257626",
-          "url": "packages/pi.agents-anywhere-1.0.1.piplug",
-          "sizeBytes": 28191,
+          "shasum": "1a293139dc2834168a0e9e59e399d377e47e2f4bbcd8fba63f6075520a556af3",
+          "url": "packages/pi.agents-anywhere-1.0.2.piplug",
+          "sizeBytes": 34696,
           "permissions": [
             "ui.view",
             "net.fetch",
